@@ -4,14 +4,23 @@ import * as XLSX from 'xlsx';
 // ─── Supabase Config ───
 const SB_URL = "https://nxhcpacmjkhgybhpaqbm.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54aGNwYWNtamtoZ3liaHBhcWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5NTkzODcsImV4cCI6MjA4ODUzNTM4N30.SWmkAvlNZxtlChDrPy56s7Pu8qQvAw84NDjGClYgenY";
-const SB_HEADERS = { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json", "Prefer": "return=representation" };
+let _accessToken = null;
+function getHeaders(extra = {}) { return { "apikey": SB_KEY, "Authorization": `Bearer ${_accessToken || SB_KEY}`, "Content-Type": "application/json", "Prefer": "return=representation", ...extra }; }
 
 async function sbFetch(path, opts = {}) {
-  const res = await fetch(`${SB_URL}${path}`, { ...opts, headers: { ...SB_HEADERS, ...opts.headers } });
+  const res = await fetch(`${SB_URL}${path}`, { ...opts, headers: getHeaders(opts.headers || {}) });
   if (!res.ok) { const t = await res.text(); throw new Error(`API ${res.status}: ${t}`); }
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
+
+
+// ─── Auth Functions ───
+async function signIn(email, password) { const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=password`, { method: "POST", headers: { "apikey": SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error_description || data.msg || "로그인 실패"); _accessToken = data.access_token; localStorage.setItem("sb-access-token", data.access_token); localStorage.setItem("sb-refresh-token", data.refresh_token); return data; }
+async function signUp(email, password, name, role = "staff") { const res = await fetch(`${SB_URL}/auth/v1/signup`, { method: "POST", headers: { "apikey": SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password, data: { name, role } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error_description || data.msg || "계정 생성 실패"); return data; }
+async function refreshSession() { const rt = localStorage.getItem("sb-refresh-token"); if (!rt) return null; const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, { method: "POST", headers: { "apikey": SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: rt }) }); if (!res.ok) { localStorage.removeItem("sb-access-token"); localStorage.removeItem("sb-refresh-token"); return null; } const data = await res.json(); _accessToken = data.access_token; localStorage.setItem("sb-access-token", data.access_token); localStorage.setItem("sb-refresh-token", data.refresh_token); return data; }
+async function getProfile() { const res = await fetch(`${SB_URL}/auth/v1/user`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${_accessToken}` } }); if (!res.ok) return null; const user = await res.json(); const profiles = await sbFetch(`/rest/v1/profiles?id=eq.${user.id}&select=*`); return profiles && profiles[0] ? { ...user, ...profiles[0] } : { ...user, name: "", role: "staff" }; }
+function signOut() { _accessToken = null; localStorage.removeItem("sb-access-token"); localStorage.removeItem("sb-refresh-token"); }
 
 // ─── DB <-> JS Mapping ───
 function dbToClient(r) {
@@ -83,12 +92,12 @@ async function apiUploadFile(recordId, file) {
   const ext = file.name.split(".").pop();
   const path = `${recordId}/${Date.now()}_${Math.random().toString(36).slice(2,6)}.${ext}`;
   await fetch(`${SB_URL}/storage/v1/object/record-files/${path}`, {
-    method: "POST", headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": file.type }, body: file,
+    method: "POST", headers: { "apikey": SB_KEY, "Authorization": `Bearer ${_accessToken || SB_KEY}`, "Content-Type": file.type }, body: file,
   });
   await sbFetch("/rest/v1/attachments", { method: "POST", body: JSON.stringify({ record_id: recordId, file_name: file.name, file_path: path, file_size: file.size, file_type: file.type }) });
 }
 async function apiDeleteAttachment(id, filePath) {
-  await fetch(`${SB_URL}/storage/v1/object/record-files/${filePath}`, { method: "DELETE", headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } });
+  await fetch(`${SB_URL}/storage/v1/object/record-files/${filePath}`, { method: "DELETE", headers: { "apikey": SB_KEY, "Authorization": `Bearer ${_accessToken || SB_KEY}` } });
   await sbFetch(`/rest/v1/attachments?id=eq.${id}`, { method: "DELETE" });
 }
 function getFileUrl(path) { return `${SB_URL}/storage/v1/object/public/record-files/${path}`; }
@@ -126,6 +135,76 @@ function exportToExcel(clients) {
 }
 
 // ─── UI Components ───
+// ─── Login Screen ───
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const handleLogin = async () => {
+    if (!email || !password) return setError("이메일과 비밀번호를 입력해주세요.");
+    setLoading(true); setError("");
+    try { await signIn(email, password); const profile = await getProfile(); onLogin(profile); }
+    catch (e) { setError(e.message.includes("Invalid login") ? "이메일 또는 비밀번호가 올바르지 않습니다." : e.message); }
+    setLoading(false);
+  };
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", fontFamily: "'Noto Sans KR', sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+      <div style={{ background: "white", borderRadius: "24px", padding: "40px 32px", width: "100%", maxWidth: "400px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ textAlign: "center", marginBottom: "32px" }}>
+          <div style={{ fontSize: "48px", marginBottom: "12px" }}>🏢</div>
+          <h1 style={{ fontSize: "22px", fontWeight: 800, color: "#1a1a2e", margin: "0 0 4px 0" }}>거래처 관리</h1>
+          <p style={{ fontSize: "13px", color: "#94a3b8" }}>HACCP 컨설팅 관리 시스템</p>
+        </div>
+        {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "12px", padding: "12px 16px", marginBottom: "20px", fontSize: "13px", color: "#dc2626" }}>{error}</div>}
+        <div style={{ marginBottom: "16px" }}><label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>이메일</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="example@company.com" onKeyDown={e => e.key === "Enter" && handleLogin()} style={{ width: "100%", padding: "12px 16px", border: "1px solid #e2e8f0", borderRadius: "12px", fontSize: "14px", outline: "none", boxSizing: "border-box" }} /></div>
+        <div style={{ marginBottom: "24px" }}><label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>비밀번호</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="비밀번호 입력" onKeyDown={e => e.key === "Enter" && handleLogin()} style={{ width: "100%", padding: "12px 16px", border: "1px solid #e2e8f0", borderRadius: "12px", fontSize: "14px", outline: "none", boxSizing: "border-box" }} /></div>
+        <button onClick={handleLogin} disabled={loading} style={{ width: "100%", padding: "14px", border: "none", borderRadius: "14px", background: "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", fontSize: "15px", fontWeight: 700, cursor: "pointer", opacity: loading ? 0.6 : 1 }}>{loading ? "로그인 중..." : "로그인"}</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── User Management (Admin Only) ───
+function UserManagement({ currentUser }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [nu, setNu] = useState({ email: "", password: "", name: "", role: "staff" });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const load = async () => { setLoading(true); try { const res = await sbFetch("/rest/v1/profiles?order=created_at.asc"); setUsers(res || []); } catch(e) {} setLoading(false); };
+  useEffect(() => { load(); }, []);
+  const handleAdd = async () => {
+    if (!nu.email || !nu.password || !nu.name) return setMsg("모든 항목을 입력해주세요.");
+    if (nu.password.length < 6) return setMsg("비밀번호는 6자 이상이어야 합니다.");
+    setSaving(true); setMsg("");
+    try { await signUp(nu.email, nu.password, nu.name, nu.role); setNu({ email: "", password: "", name: "", role: "staff" }); setShowAdd(false); setMsg("✅ 계정이 생성되었습니다!"); setTimeout(() => load(), 1000); }
+    catch (e) { setMsg("❌ " + e.message); } setSaving(false);
+  };
+  const is = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}><div><h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>직원 관리</h2><p style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>총 {users.length}명</p></div><button onClick={() => setShowAdd(!showAdd)} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "12px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer" }}>{showAdd ? "취소" : "+ 직원 추가"}</button></div>
+      {msg && <div style={{ padding: "12px 16px", borderRadius: "12px", background: msg.startsWith("✅") ? "#f0fdf4" : "#fef2f2", border: `1px solid ${msg.startsWith("✅") ? "#bbf7d0" : "#fecaca"}`, marginBottom: "16px", fontSize: "13px", color: msg.startsWith("✅") ? "#15803d" : "#dc2626" }}>{msg}</div>}
+      {showAdd && <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}><div><label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>이름 *</label><input value={nu.name} onChange={e => setNu({ ...nu, name: e.target.value })} style={is} placeholder="홍길동" /></div><div><label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>권한</label><select value={nu.role} onChange={e => setNu({ ...nu, role: e.target.value })} style={{ ...is, appearance: "auto" }}><option value="staff">일반 직원</option><option value="admin">관리자</option></select></div></div>
+        <div style={{ marginBottom: "12px" }}><label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>이메일 *</label><input type="email" value={nu.email} onChange={e => setNu({ ...nu, email: e.target.value })} style={is} placeholder="user@company.com" /></div>
+        <div style={{ marginBottom: "16px" }}><label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>초기 비밀번호 * (6자 이상)</label><input type="text" value={nu.password} onChange={e => setNu({ ...nu, password: e.target.value })} style={is} placeholder="초기 비밀번호" /></div>
+        <button onClick={handleAdd} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", width: "100%", opacity: saving ? 0.6 : 1 }}>{saving ? "생성 중..." : "계정 생성"}</button>
+      </div>}
+      {loading ? <p style={{ color: "#94a3b8", textAlign: "center", padding: "20px" }}>불러오는 중...</p> :
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>{users.map(u => (
+        <div key={u.id} style={{ background: "white", borderRadius: "14px", border: "1px solid #e8ecf2", padding: "16px 20px", display: "flex", alignItems: "center", gap: "14px" }}>
+          <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: u.role === "admin" ? "linear-gradient(135deg, #7c3aed, #a78bfa)" : "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "16px", flexShrink: 0 }}>{u.name ? u.name[0] : "?"}</div>
+          <div style={{ flex: 1 }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontSize: "15px", fontWeight: 700, color: "#1a1a2e" }}>{u.name || "(이름 없음)"}</span><span style={{ padding: "2px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 600, background: u.role === "admin" ? "#f3e8ff" : "#f1f5f9", color: u.role === "admin" ? "#7c3aed" : "#64748b" }}>{u.role === "admin" ? "관리자" : "직원"}</span>{u.id === currentUser.id && <span style={{ fontSize: "11px", color: "#3b82f6" }}>(나)</span>}</div><div style={{ fontSize: "13px", color: "#94a3b8", marginTop: "4px" }}>{u.email}</div></div>
+        </div>))}</div>}
+    </div>
+  );
+}
+
+
 function StatusBadge({ status, size = "md" }) { const cfg = STATUS_CONFIG[status] || { color: "#6b7280", bg: "#f3f4f6", icon: "?" }; const pad = size === "sm" ? "2px 8px" : "4px 14px"; const fs = size === "sm" ? "12px" : "13px"; return <span style={{ background: cfg.bg, color: cfg.color, padding: pad, borderRadius: "20px", fontSize: fs, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px", border: `1px solid ${cfg.color}22` }}><span>{cfg.icon}</span> {status}</span>; }
 function ConsultBadge({ consultType, size = "md" }) { const cfg = CONSULT_TYPES[consultType] || { color: "#6b7280", bg: "#f3f4f6", icon: "?" }; const pad = size === "sm" ? "2px 8px" : "4px 14px"; const fs = size === "sm" ? "12px" : "13px"; return <span style={{ background: cfg.bg, color: cfg.color, padding: pad, borderRadius: "20px", fontSize: fs, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px", border: `1px solid ${cfg.color}22` }}><span>{cfg.icon}</span> {consultType}</span>; }
 
@@ -180,7 +259,7 @@ function Dashboard({ clients, onNavigate }) {
   );
 }
 
-function ClientList({ clients, onNavigate, onAdd, onExport }) {
+function ClientList({ clients, onNavigate, onAdd, onExport, isAdmin }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("전체");
   const [filterConsultType, setFilterConsultType] = useState("전체");
@@ -198,7 +277,7 @@ function ClientList({ clients, onNavigate, onAdd, onExport }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "12px" }}>
         <div><h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>거래처 목록</h2><p style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>총 {filtered.length}곳</p></div>
-        <button onClick={onAdd} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "12px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}><span style={{ fontSize: "18px" }}>+</span> 거래처 추가</button>
+        {isAdmin && <button onClick={onAdd} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "12px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer" }}>+ 거래처 추가</button>}
       </div>
       <div style={{ marginBottom: "14px" }}>
         <button onClick={() => onExport(filtered)} style={{ width: "100%", padding: "9px 14px", borderRadius: "10px", border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#15803d", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>📥 엑셀 내보내기</button>
@@ -225,7 +304,7 @@ function ClientList({ clients, onNavigate, onAdd, onExport }) {
   );
 }
 
-function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDelete, onUploadFile, onDeleteAttachment, reload }) {
+function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDelete, onUploadFile, onDeleteAttachment, reload, isAdmin }) {
   const [activeTab, setActiveTab] = useState("info");
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [newRecord, setNewRecord] = useState({ date: new Date().toISOString().split("T")[0], type: "상담", content: "" });
@@ -490,20 +569,21 @@ function AddClientModal({ onClose, onSave, saving }) {
 
 // ─── Main App ───
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [view, setView] = useState("dashboard");
   const [selectedId, setSelectedId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const isAdmin = user?.role === "admin";
 
-  const loadData = async () => {
-    try { const data = await fetchAllData(); setClients(data); setError(null); }
-    catch (e) { setError("데이터 로드 실패: " + e.message); }
-    setLoading(false);
-  };
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { const init = async () => { const t = localStorage.getItem("sb-access-token"); if (t) { _accessToken = t; try { const p = await getProfile(); if (p) setUser(p); else { await refreshSession(); const p2 = await getProfile(); if (p2) setUser(p2); else signOut(); } } catch { try { await refreshSession(); const p2 = await getProfile(); if (p2) setUser(p2); else signOut(); } catch { signOut(); } } } setAuthLoading(false); }; init(); }, []);
+
+  const loadData = async () => { setLoading(true); try { const data = await fetchAllData(); setClients(data); setError(null); } catch (e) { setError("데이터 로드 실패: " + e.message); } setLoading(false); };
+  useEffect(() => { if (user) loadData(); }, [user]);
 
   const navigate = (v, id) => { setView(v); if (id) setSelectedId(id); };
   const selectedClient = clients.find(c => c.id === selectedId);
@@ -514,20 +594,23 @@ export default function App() {
   const handleAddRecord = async (clientId, data) => { const res = await apiCreateRecord(clientId, data); return res; };
   const handleUpdateRecord = async (id, data) => { await apiUpdateRecord(id, data); };
   const handleExport = (list) => { if (list.length === 0) return alert("내보낼 거래처가 없습니다."); exportToExcel(list); };
+  const handleLogout = () => { signOut(); setUser(null); setClients([]); setView("dashboard"); };
 
-  const navItems = [{ key: "dashboard", label: "대시보드", icon: "📊" }, { key: "list", label: "거래처", icon: "🏢" }];
+  const navItems = [{ key: "dashboard", label: "대시보드", icon: "📊" }, { key: "list", label: "거래처", icon: "🏢" }, ...(isAdmin ? [{ key: "users", label: "직원", icon: "👤" }] : [])];
 
-  if (loading) return (<div style={{ minHeight: "100vh", background: "#f4f6fa", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans KR', sans-serif" }}><div style={{ textAlign: "center" }}><div style={{ fontSize: "40px", marginBottom: "16px" }}>🏢</div><div style={{ fontSize: "16px", color: "#64748b", fontWeight: 600 }}>데이터 불러오는 중...</div></div></div>);
-  if (error) return (<div style={{ minHeight: "100vh", background: "#f4f6fa", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans KR', sans-serif" }}><div style={{ textAlign: "center", maxWidth: "400px", padding: "20px" }}><div style={{ fontSize: "40px", marginBottom: "16px" }}>⚠️</div><div style={{ fontSize: "16px", color: "#dc2626", fontWeight: 600, marginBottom: "12px" }}>{error}</div><button onClick={() => { setLoading(true); loadData(); }} style={{ padding: "10px 24px", borderRadius: "10px", border: "none", background: "#1a1a2e", color: "white", fontSize: "14px", fontWeight: 600, cursor: "pointer" }}>다시 시도</button></div></div>);
+  if (authLoading) return (<div style={{ minHeight: "100vh", background: "#f4f6fa", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans KR', sans-serif" }}><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet" /><div style={{ textAlign: "center" }}><div style={{ fontSize: "40px", marginBottom: "16px" }}>🏢</div><div style={{ fontSize: "16px", color: "#64748b", fontWeight: 600 }}>로딩 중...</div></div></div>);
+  if (!user) return <LoginScreen onLogin={setUser} />;
+  if (loading && clients.length === 0) return (<div style={{ minHeight: "100vh", background: "#f4f6fa", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans KR', sans-serif" }}><div style={{ textAlign: "center" }}><div style={{ fontSize: "40px", marginBottom: "16px" }}>🏢</div><div style={{ fontSize: "16px", color: "#64748b", fontWeight: 600 }}>데이터 불러오는 중...</div></div></div>);
+  if (error) return (<div style={{ minHeight: "100vh", background: "#f4f6fa", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans KR', sans-serif" }}><div style={{ textAlign: "center", maxWidth: "400px", padding: "20px" }}><div style={{ fontSize: "40px", marginBottom: "16px" }}>⚠️</div><div style={{ fontSize: "16px", color: "#dc2626", fontWeight: 600, marginBottom: "12px" }}>{error}</div><button onClick={() => loadData()} style={{ padding: "10px 24px", borderRadius: "10px", border: "none", background: "#1a1a2e", color: "white", fontSize: "14px", fontWeight: 600, cursor: "pointer" }}>다시 시도</button></div></div>);
 
   return (
     <div style={{ minHeight: "100vh", background: "#f4f6fa", fontFamily: "'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)", padding: "16px 24px", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ fontSize: "22px" }}>🏢</span><span style={{ fontSize: "17px", fontWeight: 700, letterSpacing: "-0.3px" }}>거래처 관리</span></div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10b981" }} />
-          <span style={{ fontSize: "11px", opacity: 0.7 }}>서버 연결됨</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ textAlign: "right" }}><div style={{ fontSize: "12px", fontWeight: 600 }}>{user.name || user.email}</div><div style={{ fontSize: "10px", opacity: 0.6 }}>{isAdmin ? "관리자" : "직원"}</div></div>
+          <button onClick={handleLogout} style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", padding: "5px 10px", fontSize: "11px", color: "rgba(255,255,255,0.8)", cursor: "pointer" }}>로그아웃</button>
         </div>
       </div>
       <div style={{ display: "flex", gap: "4px", padding: "12px 16px", background: "white", borderBottom: "1px solid #e8ecf2" }}>
@@ -535,8 +618,9 @@ export default function App() {
       </div>
       <div style={{ padding: "20px 16px", maxWidth: "680px", margin: "0 auto" }}>
         {view === "dashboard" && <Dashboard clients={clients} onNavigate={navigate} />}
-        {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} onExport={handleExport} />}
-        {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} onUploadFile={apiUploadFile} onDeleteAttachment={apiDeleteAttachment} reload={loadData} />}
+        {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} onExport={handleExport} isAdmin={isAdmin} />}
+        {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} onUploadFile={apiUploadFile} onDeleteAttachment={apiDeleteAttachment} reload={loadData} isAdmin={isAdmin} />}
+        {view === "users" && isAdmin && <UserManagement currentUser={user} />}
       </div>
       {showAddModal && <AddClientModal onClose={() => setShowAddModal(false)} onSave={handleAddClient} saving={saving} />}
     </div>
