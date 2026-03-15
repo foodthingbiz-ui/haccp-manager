@@ -191,7 +191,7 @@ function UserManagement({ currentUser }) {
     if (!nu.email || !nu.password || !nu.name) return setMsg("모든 항목을 입력해주세요.");
     if (nu.password.length < 6) return setMsg("비밀번호는 6자 이상이어야 합니다.");
     setSaving(true); setMsg("");
-    try { await signUp(nu.email, nu.password, nu.name, nu.role); setNu({ email: "", password: "", name: "", role: "staff" }); setShowAdd(false); setMsg("✅ 계정이 생성되었습니다!"); setTimeout(() => load(), 1000); }
+try { const result = await signUp(nu.email, nu.password, nu.name, nu.role); if (result.user) { await sbFetch("/rest/v1/profiles", { method: "POST", body: JSON.stringify({ id: result.user.id, email: nu.email, name: nu.name, role: nu.role, is_active: true }) }); } setNu({ email: "", password: "", name: "", role: "staff" }); setShowAdd(false); setMsg("✅ 계정이 생성되었습니다!"); setTimeout(() => load(), 1000); }
     catch (e) { setMsg("❌ " + e.message); } setSaving(false);
   };
 
