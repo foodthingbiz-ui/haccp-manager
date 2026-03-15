@@ -144,7 +144,18 @@ function LoginScreen({ onLogin }) {
   const handleLogin = async () => {
     if (!email || !password) return setError("이메일과 비밀번호를 입력해주세요.");
     setLoading(true); setError("");
-    try { await signIn(email, password); const profile = await getProfile(); onLogin(profile); }
+    try {
+      await signIn(email, password);
+      const profile = await getProfile();
+      // ✅ 접속 차단된 계정 체크
+      if (profile && profile.is_active === false) {
+        setError("접속 권한이 해제된 계정입니다. 관리자에게 문의하세요.");
+        signOut();
+        setLoading(false);
+        return;
+      }
+      onLogin(profile);
+    }
     catch (e) { setError(e.message.includes("Invalid login") ? "이메일 또는 비밀번호가 올바르지 않습니다." : e.message); }
     setLoading(false);
   };
@@ -183,10 +194,40 @@ function UserManagement({ currentUser }) {
     try { await signUp(nu.email, nu.password, nu.name, nu.role); setNu({ email: "", password: "", name: "", role: "staff" }); setShowAdd(false); setMsg("✅ 계정이 생성되었습니다!"); setTimeout(() => load(), 1000); }
     catch (e) { setMsg("❌ " + e.message); } setSaving(false);
   };
+
+  // ✅ 접속 차단 (is_active = false)
+  const handleDeactivate = async (id, email) => {
+    if (!confirm(`"${email}" 직원의 접속 권한을 해제하시겠습니까?\n해당 직원은 더 이상 로그인할 수 없습니다.`)) return;
+    setSaving(true); setMsg("");
+    try {
+      await sbFetch(`/rest/v1/profiles?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ is_active: false }) });
+      setMsg("✅ 접속 권한이 해제되었습니다.");
+      await load();
+    } catch (e) { setMsg("❌ 권한 해제 실패: " + e.message); }
+    setSaving(false);
+  };
+
+  // ✅ 접속 복원 (is_active = true)
+  const handleReactivate = async (id, email) => {
+    if (!confirm(`"${email}" 직원의 접속 권한을 복원하시겠습니까?`)) return;
+    setSaving(true); setMsg("");
+    try {
+      await sbFetch(`/rest/v1/profiles?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ is_active: true }) });
+      setMsg("✅ 접속 권한이 복원되었습니다.");
+      await load();
+    } catch (e) { setMsg("❌ 권한 복원 실패: " + e.message); }
+    setSaving(false);
+  };
+
   const is = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  // ✅ 활성/비활성 직원 분리
+  const activeUsers = users.filter(u => u.is_active !== false);
+  const inactiveUsers = users.filter(u => u.is_active === false);
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}><div><h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>직원 관리</h2><p style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>총 {users.length}명</p></div><button onClick={() => setShowAdd(!showAdd)} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "12px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer" }}>{showAdd ? "취소" : "+ 직원 추가"}</button></div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}><div><h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>직원 관리</h2><p style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>활성 {activeUsers.length}명{inactiveUsers.length > 0 ? ` · 차단 ${inactiveUsers.length}명` : ""}</p></div><button onClick={() => setShowAdd(!showAdd)} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "12px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer" }}>{showAdd ? "취소" : "+ 직원 추가"}</button></div>
       {msg && <div style={{ padding: "12px 16px", borderRadius: "12px", background: msg.startsWith("✅") ? "#f0fdf4" : "#fef2f2", border: `1px solid ${msg.startsWith("✅") ? "#bbf7d0" : "#fecaca"}`, marginBottom: "16px", fontSize: "13px", color: msg.startsWith("✅") ? "#15803d" : "#dc2626" }}>{msg}</div>}
       {showAdd && <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}><div><label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>이름 *</label><input value={nu.name} onChange={e => setNu({ ...nu, name: e.target.value })} style={is} placeholder="홍길동" /></div><div><label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>권한</label><select value={nu.role} onChange={e => setNu({ ...nu, role: e.target.value })} style={{ ...is, appearance: "auto" }}><option value="staff">일반 직원</option><option value="admin">관리자</option></select></div></div>
@@ -195,11 +236,42 @@ function UserManagement({ currentUser }) {
         <button onClick={handleAdd} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", width: "100%", opacity: saving ? 0.6 : 1 }}>{saving ? "생성 중..." : "계정 생성"}</button>
       </div>}
       {loading ? <p style={{ color: "#94a3b8", textAlign: "center", padding: "20px" }}>불러오는 중...</p> :
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>{users.map(u => (
-        <div key={u.id} style={{ background: "white", borderRadius: "14px", border: "1px solid #e8ecf2", padding: "16px 20px", display: "flex", alignItems: "center", gap: "14px" }}>
-          <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: u.role === "admin" ? "linear-gradient(135deg, #7c3aed, #a78bfa)" : "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "16px", flexShrink: 0 }}>{u.name ? u.name[0] : "?"}</div>
-          <div style={{ flex: 1 }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontSize: "15px", fontWeight: 700, color: "#1a1a2e" }}>{u.name || "(이름 없음)"}</span><span style={{ padding: "2px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 600, background: u.role === "admin" ? "#f3e8ff" : "#f1f5f9", color: u.role === "admin" ? "#7c3aed" : "#64748b" }}>{u.role === "admin" ? "관리자" : "직원"}</span>{u.id === currentUser.id && <span style={{ fontSize: "11px", color: "#3b82f6" }}>(나)</span>}</div><div style={{ fontSize: "13px", color: "#94a3b8", marginTop: "4px" }}>{u.email}</div></div>
-        </div>))}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        {/* ✅ 활성 직원 목록 */}
+        {activeUsers.map(u => (
+          <div key={u.id} style={{ background: "white", borderRadius: "14px", border: "1px solid #e8ecf2", padding: "16px 20px", display: "flex", alignItems: "center", gap: "14px" }}>
+            <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: u.role === "admin" ? "linear-gradient(135deg, #7c3aed, #a78bfa)" : "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "16px", flexShrink: 0 }}>{u.name ? u.name[0] : "?"}</div>
+            <div style={{ flex: 1 }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontSize: "15px", fontWeight: 700, color: "#1a1a2e" }}>{u.name || "(이름 없음)"}</span><span style={{ padding: "2px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 600, background: u.role === "admin" ? "#f3e8ff" : "#f1f5f9", color: u.role === "admin" ? "#7c3aed" : "#64748b" }}>{u.role === "admin" ? "관리자" : "직원"}</span>{u.id === currentUser.id && <span style={{ fontSize: "11px", color: "#3b82f6" }}>(나)</span>}</div><div style={{ fontSize: "13px", color: "#94a3b8", marginTop: "4px" }}>{u.email}</div></div>
+            {/* ✅ 관리자 본인이 아닌 직원만 차단 버튼 표시 */}
+            {u.id !== currentUser.id && u.role !== "admin" && (
+              <button onClick={() => handleDeactivate(u.id, u.email)} disabled={saving} style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#dc2626", cursor: "pointer", fontWeight: 600, flexShrink: 0, opacity: saving ? 0.6 : 1 }}>접속 차단</button>
+            )}
+          </div>))}
+
+        {/* ✅ 비활성(차단된) 직원 목록 */}
+        {inactiveUsers.length > 0 && (
+          <div style={{ marginTop: "16px" }}>
+            <div style={{ fontSize: "13px", color: "#94a3b8", fontWeight: 600, marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" }}>
+              <span>🚫</span> 접속 차단된 직원
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {inactiveUsers.map(u => (
+                <div key={u.id} style={{ background: "#fafafa", borderRadius: "14px", border: "1px solid #e8ecf2", padding: "16px 20px", display: "flex", alignItems: "center", gap: "14px", opacity: 0.7 }}>
+                  <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: "#d1d5db", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "16px", flexShrink: 0 }}>{u.name ? u.name[0] : "?"}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "15px", fontWeight: 700, color: "#94a3b8" }}>{u.name || "(이름 없음)"}</span>
+                      <span style={{ padding: "2px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 600, background: "#fef2f2", color: "#dc2626" }}>차단됨</span>
+                    </div>
+                    <div style={{ fontSize: "13px", color: "#94a3b8", marginTop: "4px" }}>{u.email}</div>
+                  </div>
+                  <button onClick={() => handleReactivate(u.id, u.email)} disabled={saving} style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#15803d", cursor: "pointer", fontWeight: 600, flexShrink: 0, opacity: saving ? 0.6 : 1 }}>권한 복원</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>}
     </div>
   );
 }
@@ -580,7 +652,40 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const isAdmin = user?.role === "admin";
 
-  useEffect(() => { const init = async () => { const t = localStorage.getItem("sb-access-token"); if (t) { _accessToken = t; try { const p = await getProfile(); if (p) setUser(p); else { await refreshSession(); const p2 = await getProfile(); if (p2) setUser(p2); else signOut(); } } catch { try { await refreshSession(); const p2 = await getProfile(); if (p2) setUser(p2); else signOut(); } catch { signOut(); } } } setAuthLoading(false); }; init(); }, []);
+  useEffect(() => {
+    const init = async () => {
+      const t = localStorage.getItem("sb-access-token");
+      if (t) {
+        _accessToken = t;
+        try {
+          const p = await getProfile();
+          if (p) {
+            // ✅ 자동 로그인 시에도 is_active 체크
+            if (p.is_active === false) { signOut(); setAuthLoading(false); return; }
+            setUser(p);
+          } else {
+            await refreshSession();
+            const p2 = await getProfile();
+            if (p2) {
+              if (p2.is_active === false) { signOut(); setAuthLoading(false); return; }
+              setUser(p2);
+            } else signOut();
+          }
+        } catch {
+          try {
+            await refreshSession();
+            const p2 = await getProfile();
+            if (p2) {
+              if (p2.is_active === false) { signOut(); setAuthLoading(false); return; }
+              setUser(p2);
+            } else signOut();
+          } catch { signOut(); }
+        }
+      }
+      setAuthLoading(false);
+    };
+    init();
+  }, []);
 
   const loadData = async () => { setLoading(true); try { const data = await fetchAllData(); setClients(data); setError(null); } catch (e) { setError("데이터 로드 실패: " + e.message); } setLoading(false); };
   useEffect(() => { if (user) loadData(); }, [user]);
