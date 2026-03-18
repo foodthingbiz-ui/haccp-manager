@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 // ─── Supabase 설정 ───
 const SUPABASE_URL = "https://nxhcpacmjkhgybhpaqbm.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54aGNwYWNtamtoZ3liaHBhcWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5NTkzODcsImV4cCI6MjA4ODUzNTM4N30.SWmkAvlNZxtlChDrPy56s7Pu8qQvAw84NDjGClYgenY";
+const SUPABASE_ANON_KEY = "여기에_anon_public_키를_넣으세요";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ─── 상수 설정 ───
@@ -273,7 +273,7 @@ function ClientList({ clients, onNavigate, onAdd }) {
 }
 
 // ─── 거래처 상세 ───
-function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord }) {
+function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDelete }) {
   const [activeTab, setActiveTab] = useState("info");
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [newRecord, setNewRecord] = useState({ date: new Date().toISOString().split("T")[0], type: "상담", content: "" });
@@ -282,6 +282,7 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord })
   const [editingRecordId, setEditingRecordId] = useState(null);
   const [editRecordData, setEditRecordData] = useState({ date: "", type: "", content: "" });
   const [saving, setSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (!client) return null;
 
@@ -331,7 +332,22 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord })
   return (
     <div>
       <div style={{ marginBottom: "24px" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: "#64748b", fontSize: "14px", cursor: "pointer", padding: 0, marginBottom: "12px", display: "flex", alignItems: "center", gap: "4px" }}>← 목록으로</button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <button onClick={onBack} style={{ background: "none", border: "none", color: "#64748b", fontSize: "14px", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: "4px" }}>← 목록으로</button>
+          <button onClick={() => setShowDeleteConfirm(true)} style={{ background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 14px", fontSize: "13px", color: "#991b1b", cursor: "pointer", fontWeight: 600 }}>삭제</button>
+        </div>
+
+        {/* 삭제 확인 팝업 */}
+        {showDeleteConfirm && (
+          <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: "14px", padding: "20px", marginBottom: "16px" }}>
+            <div style={{ fontSize: "15px", fontWeight: 700, color: "#991b1b", marginBottom: "8px" }}>정말 삭제하시겠습니까?</div>
+            <div style={{ fontSize: "13px", color: "#b91c1c", marginBottom: "16px" }}>"{client.name}" 거래처와 관련된 모든 상담 기록이 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => setShowDeleteConfirm(false)} style={{ flex: 1, padding: "10px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
+              <button onClick={() => onDelete(client.id)} style={{ flex: 1, padding: "10px", border: "none", borderRadius: "10px", background: "#dc2626", color: "white", fontSize: "13px", cursor: "pointer", fontWeight: 600 }}>삭제하기</button>
+            </div>
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
           <div style={{ width: "52px", height: "52px", borderRadius: "14px", background: "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "20px", flexShrink: 0 }}>{client.name[0]}</div>
           <div style={{ flex: 1 }}>
@@ -802,6 +818,24 @@ export default function App() {
     showToast("상담 기록이 수정되었습니다.");
   };
 
+  // ── 거래처 삭제 (DB에서 삭제) ──
+  const handleDeleteClient = async (id) => {
+    const { error } = await supabase
+      .from("clients")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("거래처 삭제 실패:", error);
+      showToast("거래처 삭제에 실패했습니다.", "error");
+      return;
+    }
+
+    setClients(prev => prev.filter(c => c.id !== id));
+    setView("list");
+    showToast("거래처가 삭제되었습니다.");
+  };
+
   // ── 로그아웃 ──
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -860,7 +894,7 @@ export default function App() {
           <>
             {view === "dashboard" && <Dashboard clients={clients} onNavigate={navigate} />}
             {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} />}
-            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} />}
+            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} />}
           </>
         )}
       </div>
