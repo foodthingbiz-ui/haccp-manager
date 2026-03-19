@@ -2,8 +2,8 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── Supabase 설정 ───
-const SUPABASE_URL = "https://nxhcpacmjkhgybhpaqbm.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54aGNwYWNtamtoZ3liaHBhcWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5NTkzODcsImV4cCI6MjA4ODUzNTM4N30.SWmkAvlNZxtlChDrPy56s7Pu8qQvAw84NDjGClYgenY";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ─── 상수 설정 ───
