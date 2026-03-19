@@ -622,7 +622,8 @@ function HaccpManagement({ clientId }) {
   const [openCategory, setOpenCategory] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [editData, setEditData] = useState({ item_name: "", record_date: "", memo: "" });
+  const [editData, setEditData] = useState({ item_name: "", record_date: "", memo: "", file_url: "", file_name: "" });
+  const [editFile, setEditFile] = useState(null);
 
   // ── 데이터 로딩 ──
   const fetchData = useCallback(async () => {
@@ -683,19 +684,40 @@ function HaccpManagement({ clientId }) {
   // ── 기록 수정 ──
   const startEdit = (r) => {
     setEditingId(r.id);
-    setEditData({ item_name: r.item_name || "", record_date: r.record_date || "", memo: r.memo || "" });
+    setEditData({ item_name: r.item_name || "", record_date: r.record_date || "", memo: r.memo || "", file_url: r.file_url || "", file_name: r.file_name || "" });
+    setEditFile(null);
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setEditData({ item_name: "", record_date: "", memo: "" });
+    setEditData({ item_name: "", record_date: "", memo: "", file_url: "", file_name: "" });
+    setEditFile(null);
   };
 
   const saveEdit = async () => {
     setSaving(true);
+    let fileUrl = editData.file_url;
+    let fileName = editData.file_name;
+
+    // 새 파일이 선택된 경우 업로드
+    if (editFile) {
+      const ext = editFile.name.split(".").pop();
+      const path = `${clientId}/${Date.now()}.${ext}`;
+      const { error: uploadErr } = await supabase.storage
+        .from("haccp-files")
+        .upload(path, editFile);
+      if (!uploadErr) {
+        const { data: urlData } = supabase.storage
+          .from("haccp-files")
+          .getPublicUrl(path);
+        fileUrl = urlData.publicUrl;
+        fileName = editFile.name;
+      }
+    }
+
     const { data, error } = await supabase
       .from("haccp_records")
-      .update({ item_name: editData.item_name, record_date: editData.record_date || null, memo: editData.memo })
+      .update({ item_name: editData.item_name, record_date: editData.record_date || null, memo: editData.memo, file_url: fileUrl, file_name: fileName })
       .eq("id", editingId)
       .select()
       .single();
@@ -704,7 +726,8 @@ function HaccpManagement({ clientId }) {
       setRecords(prev => prev.map(r => r.id === editingId ? { ...r, ...data } : r));
     }
     setEditingId(null);
-    setEditData({ item_name: "", record_date: "", memo: "" });
+    setEditData({ item_name: "", record_date: "", memo: "", file_url: "", file_name: "" });
+    setEditFile(null);
     setSaving(false);
   };
 
@@ -772,7 +795,7 @@ function HaccpManagement({ clientId }) {
                   )}
 
                   {/* 기록 목록 */}
-                  <div style={{ maxHeight: catRecords.length > 3 ? "280px" : "auto", overflowY: catRecords.length > 3 ? "auto" : "visible", marginTop: "12px" }}>
+                  <div style={{ maxHeight: catRecords.length > 3 ? "360px" : "auto", overflowY: catRecords.length > 3 ? "auto" : "visible", marginTop: "12px" }}>
                     {catRecords.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "16px 0" }}>등록된 기록이 없습니다.</p>}
                     {catRecords.map(r => (
                       <div key={r.id} style={{ padding: "12px", borderRadius: "10px", background: editingId === r.id ? "#fff" : "#f8fafc", border: editingId === r.id ? "2px solid #1a1a2e" : "1px solid transparent", marginBottom: "8px" }}>
@@ -792,6 +815,19 @@ function HaccpManagement({ clientId }) {
                             <div>
                               <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
                               <textarea value={editData.memo} onChange={e => setEditData({ ...editData, memo: e.target.value })} rows={2} style={{ ...inputStyle, resize: "vertical" }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>첨부파일</label>
+                              {editData.file_url && !editFile && (
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                                  <a href={editData.file_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", display: "inline-flex", alignItems: "center", gap: "4px", textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: "6px" }}>
+                                    📎 {editData.file_name || "현재 파일"}
+                                  </a>
+                                </div>
+                              )}
+                              <input type="file" accept="image/*,.pdf" onChange={e => setEditFile(e.target.files[0] || null)} style={{ fontSize: "13px", color: "#64748b" }} />
+                              {editFile && <div style={{ fontSize: "12px", color: "#0f766e", marginTop: "4px" }}>새 파일: 📎 {editFile.name}</div>}
+                              {!editFile && editData.file_url && <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px" }}>새 파일을 선택하면 기존 파일이 교체됩니다</div>}
                             </div>
                             <div style={{ display: "flex", gap: "8px" }}>
                               <button onClick={cancelEdit} style={{ flex: 1, padding: "9px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
