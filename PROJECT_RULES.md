@@ -37,6 +37,23 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 - date, type, content
 - created_at, updated_at
 
+**haccp_records 테이블:**
+- id, client_id (FK → clients.id ON DELETE CASCADE)
+- category (haccp_education, hygiene_education, validity_evaluation, external_calibration, internal_calibration, water_test, self_evaluation)
+- item_name (CCP명, 기기명 등)
+- record_date, memo
+- file_url, file_name (첨부파일)
+- created_at, updated_at
+
+**water_test_config 테이블:**
+- id, client_id (FK → clients.id ON DELETE CASCADE)
+- water_type (상수도 / 지하수)
+- created_at
+
+**Supabase Storage:**
+- 버킷명: haccp-files (Public)
+- 경로: {client_id}/{category}/{timestamp}.{ext}
+
 ### 4. 데이터 변환 규칙
 - DB는 snake_case: `consult_type`, `contract_amount`, `consult_fee`, `maintenance_fee`
 - 프론트는 camelCase: `consultType`, `contractAmount`, `consultFee`, `maintenanceFee`
@@ -64,9 +81,9 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 - [x] 검색 + 상태/종류 필터
 - [x] 토스트 알림 (성공/실패)
 - [x] 로딩 스피너
+- [x] HACCP관리 탭 (7개 항목 + 메모 + 파일첨부)
 
 ## 아직 남은 기능
-- [ ] HACCP 체크리스트 (25개 항목 + 메모)
 - [ ] 직원 관리 탭 (admin 전용)
 - [ ] Excel 내보내기/가져오기 (DB 버전)
 
