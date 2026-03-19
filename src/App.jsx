@@ -367,8 +367,8 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
   const tabs = [
     { key: "info", label: "기본 정보", icon: "📋" },
     { key: "records", label: "상담 기록", icon: "📝" },
-    { key: "contract", label: "계약/매출", icon: "💰" },
     { key: "haccp", label: "HACCP관리", icon: "🔬" },
+    { key: "contract", label: "계약/매출", icon: "💰" },
   ];
 
   const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
@@ -612,6 +612,7 @@ const HACCP_CATEGORIES = [
   { key: "internal_calibration", label: "계측기기 자체검교정", icon: "⚙️" },
   { key: "water_test", label: "수질검사", icon: "💧" },
   { key: "self_evaluation", label: "자체평가", icon: "📊" },
+  { key: "etc_note", label: "기타내용", icon: "📌" },
 ];
 
 function HaccpManagement({ clientId }) {
@@ -620,6 +621,8 @@ function HaccpManagement({ clientId }) {
   const [loading, setLoading] = useState(true);
   const [openCategory, setOpenCategory] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editData, setEditData] = useState({ item_name: "", record_date: "", memo: "" });
 
   // ── 데이터 로딩 ──
   const fetchData = useCallback(async () => {
@@ -649,7 +652,6 @@ function HaccpManagement({ clientId }) {
     let fileUrl = "";
     let fileName = "";
 
-    // 파일 업로드
     if (file) {
       const ext = file.name.split(".").pop();
       const path = `${clientId}/${category}/${Date.now()}.${ext}`;
@@ -676,6 +678,34 @@ function HaccpManagement({ clientId }) {
     }
     setSaving(false);
     return !error;
+  };
+
+  // ── 기록 수정 ──
+  const startEdit = (r) => {
+    setEditingId(r.id);
+    setEditData({ item_name: r.item_name || "", record_date: r.record_date || "", memo: r.memo || "" });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditData({ item_name: "", record_date: "", memo: "" });
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("haccp_records")
+      .update({ item_name: editData.item_name, record_date: editData.record_date || null, memo: editData.memo })
+      .eq("id", editingId)
+      .select()
+      .single();
+
+    if (!error && data) {
+      setRecords(prev => prev.map(r => r.id === editingId ? { ...r, ...data } : r));
+    }
+    setEditingId(null);
+    setEditData({ item_name: "", record_date: "", memo: "" });
+    setSaving(false);
   };
 
   // ── 기록 삭제 ──
@@ -706,6 +736,7 @@ function HaccpManagement({ clientId }) {
         {HACCP_CATEGORIES.map(cat => {
           const catRecords = records.filter(r => r.category === cat.key);
           const isOpen = openCategory === cat.key;
+          const needsItemName = ["validity_evaluation", "external_calibration", "internal_calibration"].includes(cat.key);
 
           return (
             <div key={cat.key} style={{ background: "white", borderRadius: "14px", border: isOpen ? "2px solid #1a1a2e" : "1px solid #e8ecf2", overflow: "hidden" }}>
@@ -735,27 +766,57 @@ function HaccpManagement({ clientId }) {
                     </div>
                   )}
 
-                  {/* 수질검사 - 상수도인 경우 기록 추가 숨김 */}
+                  {/* 기록 추가 폼 */}
                   {!(cat.key === "water_test" && (waterConfig?.water_type || "상수도") === "상수도") && (
                     <HaccpRecordForm category={cat.key} onAdd={addRecord} saving={saving} inputStyle={inputStyle} />
                   )}
 
                   {/* 기록 목록 */}
-                  <div style={{ maxHeight: catRecords.length > 3 ? "240px" : "auto", overflowY: catRecords.length > 3 ? "auto" : "visible", marginTop: "12px" }}>
+                  <div style={{ maxHeight: catRecords.length > 3 ? "280px" : "auto", overflowY: catRecords.length > 3 ? "auto" : "visible", marginTop: "12px" }}>
                     {catRecords.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "16px 0" }}>등록된 기록이 없습니다.</p>}
                     {catRecords.map(r => (
-                      <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "12px", borderRadius: "10px", background: "#f8fafc", marginBottom: "8px" }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          {r.item_name && <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a2e", marginBottom: "2px" }}>{r.item_name}</div>}
-                          {r.record_date && <div style={{ fontSize: "12px", color: "#64748b" }}>{formatDate(r.record_date)}</div>}
-                          {r.memo && <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px", whiteSpace: "pre-wrap" }}>{r.memo}</div>}
-                          {r.file_url && (
-                            <a href={r.file_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", marginTop: "4px", display: "inline-flex", alignItems: "center", gap: "4px", textDecoration: "none" }}>
-                              📎 {r.file_name || "첨부파일"}
-                            </a>
-                          )}
-                        </div>
-                        <button onClick={() => deleteRecord(r.id)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "16px", cursor: "pointer", padding: "2px 6px", flexShrink: 0 }}>✕</button>
+                      <div key={r.id} style={{ padding: "12px", borderRadius: "10px", background: editingId === r.id ? "#fff" : "#f8fafc", border: editingId === r.id ? "2px solid #1a1a2e" : "1px solid transparent", marginBottom: "8px" }}>
+                        {editingId === r.id ? (
+                          /* ── 수정 모드 ── */
+                          <div style={{ display: "grid", gap: "10px" }}>
+                            {needsItemName && (
+                              <div>
+                                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>항목명</label>
+                                <input value={editData.item_name} onChange={e => setEditData({ ...editData, item_name: e.target.value })} style={inputStyle} />
+                              </div>
+                            )}
+                            <div>
+                              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>날짜</label>
+                              <input type="date" value={editData.record_date} onChange={e => setEditData({ ...editData, record_date: e.target.value })} style={inputStyle} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
+                              <textarea value={editData.memo} onChange={e => setEditData({ ...editData, memo: e.target.value })} rows={2} style={{ ...inputStyle, resize: "vertical" }} />
+                            </div>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <button onClick={cancelEdit} style={{ flex: 1, padding: "9px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
+                              <button onClick={saveEdit} disabled={saving} style={{ flex: 1, padding: "9px", border: "none", borderRadius: "10px", background: "#0f766e", color: "white", fontSize: "13px", cursor: "pointer", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "저장 중..." : "수정 완료"}</button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* ── 보기 모드 ── */
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {r.item_name && <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a2e", marginBottom: "2px" }}>{r.item_name}</div>}
+                              {r.record_date && <div style={{ fontSize: "12px", color: "#64748b" }}>{formatDate(r.record_date)}</div>}
+                              {r.memo && <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px", whiteSpace: "pre-wrap" }}>{r.memo}</div>}
+                              {r.file_url && (
+                                <a href={r.file_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", marginTop: "6px", display: "inline-flex", alignItems: "center", gap: "4px", textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: "6px" }}>
+                                  📎 {r.file_name || "첨부파일 보기"}
+                                </a>
+                              )}
+                            </div>
+                            <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                              <button onClick={() => startEdit(r)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>수정</button>
+                              <button onClick={() => deleteRecord(r.id)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "16px", cursor: "pointer", padding: "2px 6px" }}>✕</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -776,14 +837,17 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
   const [memo, setMemo] = useState("");
   const [file, setFile] = useState(null);
 
-  const needsItemName = ["validity_evaluation", "external_calibration", "internal_calibration"].includes(category);
+  const needsItemName = ["validity_evaluation", "external_calibration", "internal_calibration", "etc_note"].includes(category);
+  const isEtcNote = category === "etc_note";
   const itemLabel = category === "validity_evaluation" ? "CCP명 (예: CCP1-가열)" :
     category === "external_calibration" ? "계측기기명" :
-    category === "internal_calibration" ? "계측기기명" : "";
+    category === "internal_calibration" ? "계측기기명" :
+    category === "etc_note" ? "제목" : "";
 
   const handleSubmit = async () => {
-    if (needsItemName && !itemName.trim()) return alert("항목명을 입력해주세요.");
-    const success = await onAdd(category, itemName, recordDate, memo, file);
+    if (needsItemName && !itemName.trim()) return alert(isEtcNote ? "제목을 입력해주세요." : "항목명을 입력해주세요.");
+    if (isEtcNote && !memo.trim()) return alert("내용을 입력해주세요.");
+    const success = await onAdd(category, itemName, isEtcNote ? null : recordDate, memo, file);
     if (success) {
       setItemName("");
       setRecordDate(new Date().toISOString().split("T")[0]);
@@ -801,13 +865,15 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
             <input value={itemName} onChange={e => setItemName(e.target.value)} style={inputStyle} placeholder={itemLabel} />
           </div>
         )}
+        {!isEtcNote && (
+          <div>
+            <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>날짜</label>
+            <input type="date" value={recordDate} onChange={e => setRecordDate(e.target.value)} style={inputStyle} />
+          </div>
+        )}
         <div>
-          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>날짜</label>
-          <input type="date" value={recordDate} onChange={e => setRecordDate(e.target.value)} style={inputStyle} />
-        </div>
-        <div>
-          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
-          <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2} style={{ ...inputStyle, resize: "vertical" }} placeholder="메모 입력 (선택)" />
+          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>{isEtcNote ? "내용" : "메모"}</label>
+          <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={isEtcNote ? 5 : 2} style={{ ...inputStyle, resize: "vertical" }} placeholder={isEtcNote ? "내용을 입력하세요..." : "메모 입력 (선택)"} />
         </div>
         <div>
           <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>파일 첨부</label>
