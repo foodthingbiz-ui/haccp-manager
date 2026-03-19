@@ -2,8 +2,8 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── Supabase 설정 ───
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL = "https://nxhcpacmjkhgybhpaqbm.supabase.co";
+const SUPABASE_ANON_KEY = "여기에_anon_public_키를_넣으세요";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ─── 상수 설정 ───
@@ -125,22 +125,51 @@ function ConsultBadge({ consultType, size = "md" }) {
 
 // ─── 대시보드 ───
 function Dashboard({ clients, onNavigate }) {
-  const stats = useMemo(() => {
-    const total = clients.length;
-    const byStatus = {};
-    Object.keys(STATUS_CONFIG).forEach(s => byStatus[s] = clients.filter(c => c.status === s).length);
-    const byConsultType = {};
-    Object.keys(CONSULT_TYPES).forEach(ct => byConsultType[ct] = clients.filter(c => c.consultType === ct).length);
-    const totalRevenue = clients.reduce((sum, c) => sum + (c.consultFee || 0) + (c.maintenanceFee || 0), 0);
-    const recentRecords = clients.flatMap(c => c.records.map(r => ({ ...r, clientName: c.name, clientId: c.id }))).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 5);
-    return { total, byStatus, byConsultType, totalRevenue, recentRecords };
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState("전체");
+
+  // 거래처 등록일에서 연도 목록 추출
+  const years = useMemo(() => {
+    const yearSet = new Set();
+    clients.forEach(c => {
+      if (c.registeredAt) yearSet.add(new Date(c.registeredAt).getFullYear());
+    });
+    return Array.from(yearSet).sort((a, b) => b - a);
   }, [clients]);
+
+  // 선택된 연도로 필터링
+  const filteredClients = useMemo(() => {
+    if (selectedYear === "전체") return clients;
+    return clients.filter(c => c.registeredAt && new Date(c.registeredAt).getFullYear() === selectedYear);
+  }, [clients, selectedYear]);
+
+  const stats = useMemo(() => {
+    const total = filteredClients.length;
+    const byStatus = {};
+    Object.keys(STATUS_CONFIG).forEach(s => byStatus[s] = filteredClients.filter(c => c.status === s).length);
+    const byConsultType = {};
+    Object.keys(CONSULT_TYPES).forEach(ct => byConsultType[ct] = filteredClients.filter(c => c.consultType === ct).length);
+    const totalConsultFee = filteredClients.reduce((sum, c) => sum + (c.consultFee || 0), 0);
+    const totalMaintenanceFee = filteredClients.reduce((sum, c) => sum + (c.maintenanceFee || 0), 0);
+    const totalRevenue = totalConsultFee + totalMaintenanceFee;
+    const recentRecords = filteredClients.flatMap(c => c.records.map(r => ({ ...r, clientName: c.name, clientId: c.id }))).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 5);
+    return { total, byStatus, byConsultType, totalConsultFee, totalMaintenanceFee, totalRevenue, recentRecords };
+  }, [filteredClients]);
 
   return (
     <div>
       <div style={{ marginBottom: "28px" }}>
         <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>대시보드</h2>
         <p style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>전체 거래처 현황을 한눈에 확인하세요</p>
+      </div>
+      {/* 연도 필터 */}
+      <div style={{ marginBottom: "16px" }}>
+        <div style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 600, marginBottom: "6px" }}>연도별 보기</div>
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {["전체", ...years].map(y => (
+            <button key={y} onClick={() => setSelectedYear(y)} style={{ padding: "6px 14px", borderRadius: "10px", border: selectedYear === y ? "2px solid #1a1a2e" : "1px solid #e2e8f0", background: selectedYear === y ? "#1a1a2e" : "white", color: selectedYear === y ? "white" : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{y === "전체" ? "전체" : `${y}년`}</button>
+          ))}
+        </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "14px", marginBottom: "20px" }}>
         <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)", borderRadius: "16px", padding: "22px", color: "white" }}>
@@ -167,9 +196,19 @@ function Dashboard({ clients, onNavigate }) {
           ))}
         </div>
       </div>
-      <div style={{ background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", borderRadius: "16px", padding: "24px", color: "white", marginBottom: "28px" }}>
-        <div style={{ fontSize: "13px", opacity: 0.8, marginBottom: "6px" }}>총 계약 금액</div>
+      <div style={{ background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", borderRadius: "16px", padding: "24px", color: "white", marginBottom: "16px" }}>
+        <div style={{ fontSize: "13px", opacity: 0.8, marginBottom: "6px" }}>총 계약 금액{selectedYear !== "전체" ? ` (${selectedYear}년)` : ""}</div>
         <div style={{ fontSize: "28px", fontWeight: 800 }}>{formatMoney(stats.totalRevenue)}</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "28px" }}>
+        <div style={{ background: "#ede9fe", borderRadius: "14px", padding: "18px" }}>
+          <div style={{ fontSize: "12px", color: "#7c3aed", fontWeight: 600, marginBottom: "6px" }}>컨설팅 비용 합계</div>
+          <div style={{ fontSize: "22px", fontWeight: 800, color: "#7c3aed" }}>{formatMoney(stats.totalConsultFee)}</div>
+        </div>
+        <div style={{ background: "#e0f2fe", borderRadius: "14px", padding: "18px" }}>
+          <div style={{ fontSize: "12px", color: "#0284c7", fontWeight: 600, marginBottom: "6px" }}>사후관리 비용 합계</div>
+          <div style={{ fontSize: "22px", fontWeight: 800, color: "#0284c7" }}>{formatMoney(stats.totalMaintenanceFee)}</div>
+        </div>
       </div>
       <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", padding: "24px" }}>
         <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 18px 0" }}>최근 활동</h3>
