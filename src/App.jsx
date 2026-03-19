@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 // ─── Supabase 설정 ───
 const SUPABASE_URL = "https://nxhcpacmjkhgybhpaqbm.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54aGNwYWNtamtoZ3liaHBhcWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5NTkzODcsImV4cCI6MjA4ODUzNTM4N30.SWmkAvlNZxtlChDrPy56s7Pu8qQvAw84NDjGClYgenY";
+const SUPABASE_ANON_KEY = "여기에_anon_public_키를_넣으세요";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ─── 상수 설정 ───
@@ -43,6 +43,8 @@ function dbToClient(row, records = []) {
     consultType: row.consult_type || "신규인증",
     status: row.status || "상담중",
     contractAmount: row.contract_amount || 0,
+    consultFee: row.consult_fee || 0,
+    maintenanceFee: row.maintenance_fee || 0,
     memo: row.memo || "",
     registeredAt: row.registered_at || "",
     records: records.map(r => ({
@@ -66,6 +68,8 @@ function clientToDb(data) {
   if (data.consultType !== undefined) result.consult_type = data.consultType;
   if (data.status !== undefined) result.status = data.status;
   if (data.contractAmount !== undefined) result.contract_amount = data.contractAmount;
+  if (data.consultFee !== undefined) result.consult_fee = data.consultFee;
+  if (data.maintenanceFee !== undefined) result.maintenance_fee = data.maintenanceFee;
   if (data.memo !== undefined) result.memo = data.memo;
   if (data.registeredAt !== undefined) result.registered_at = data.registeredAt;
   return result;
@@ -127,7 +131,7 @@ function Dashboard({ clients, onNavigate }) {
     Object.keys(STATUS_CONFIG).forEach(s => byStatus[s] = clients.filter(c => c.status === s).length);
     const byConsultType = {};
     Object.keys(CONSULT_TYPES).forEach(ct => byConsultType[ct] = clients.filter(c => c.consultType === ct).length);
-    const totalRevenue = clients.reduce((sum, c) => sum + c.contractAmount, 0);
+    const totalRevenue = clients.reduce((sum, c) => sum + (c.consultFee || 0) + (c.maintenanceFee || 0), 0);
     const recentRecords = clients.flatMap(c => c.records.map(r => ({ ...r, clientName: c.name, clientId: c.id }))).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 5);
     return { total, byStatus, byConsultType, totalRevenue, recentRecords };
   }, [clients]);
@@ -255,7 +259,7 @@ function ClientList({ clients, onNavigate, onAdd }) {
                 </div>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                {c.contractAmount > 0 && <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f766e" }}>{formatMoney(c.contractAmount)}</div>}
+                {(c.consultFee + c.maintenanceFee) > 0 && <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f766e" }}>{formatMoney(c.consultFee + c.maintenanceFee)}</div>}
                 <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>{c.type}</div>
               </div>
             </div>
@@ -421,6 +425,16 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
                   {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>컨설팅 비용 (원)</label>
+                  <input type="number" value={editData.consultFee || 0} onChange={e => setEditData({ ...editData, consultFee: Number(e.target.value) || 0 })} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>사후관리 비용 (원)</label>
+                  <input type="number" value={editData.maintenanceFee || 0} onChange={e => setEditData({ ...editData, maintenanceFee: Number(e.target.value) || 0 })} style={inputStyle} />
+                </div>
+              </div>
               <div>
                 <label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
                 <textarea value={editData.memo || ""} onChange={e => setEditData({ ...editData, memo: e.target.value })} rows={5} style={{ ...inputStyle, resize: "vertical" }} placeholder="엔터를 눌러 줄을 바꿀 수 있습니다" />
@@ -511,9 +525,19 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
         <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", padding: "24px" }}>
           <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 20px 0" }}>계약 / 매출 정보</h3>
           <div style={{ display: "grid", gap: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <div style={{ background: "#ede9fe", borderRadius: "14px", padding: "18px" }}>
+                <div style={{ fontSize: "12px", color: "#7c3aed", fontWeight: 600, marginBottom: "6px" }}>컨설팅 비용</div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "#7c3aed" }}>{formatMoney(client.consultFee)}</div>
+              </div>
+              <div style={{ background: "#e0f2fe", borderRadius: "14px", padding: "18px" }}>
+                <div style={{ fontSize: "12px", color: "#0284c7", fontWeight: 600, marginBottom: "6px" }}>정기 사후관리 비용</div>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: "#0284c7" }}>{formatMoney(client.maintenanceFee)}</div>
+              </div>
+            </div>
             <div style={{ background: "linear-gradient(135deg, #0f766e, #14b8a6)", borderRadius: "14px", padding: "22px", color: "white" }}>
-              <div style={{ fontSize: "13px", opacity: 0.8, marginBottom: "6px" }}>계약 금액</div>
-              <div style={{ fontSize: "28px", fontWeight: 800 }}>{formatMoney(client.contractAmount)}</div>
+              <div style={{ fontSize: "13px", opacity: 0.8, marginBottom: "6px" }}>총 계약 금액</div>
+              <div style={{ fontSize: "28px", fontWeight: 800 }}>{formatMoney(client.consultFee + client.maintenanceFee)}</div>
             </div>
             <div style={{ padding: "12px 0", borderBottom: "1px solid #f1f5f9", display: "flex", gap: "12px", alignItems: "center" }}>
               <span style={{ fontSize: "13px", color: "#94a3b8", width: "85px", flexShrink: 0, fontWeight: 600 }}>진행 상태</span>
@@ -536,12 +560,12 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
 
 // ─── 거래처 추가 모달 ───
 function AddClientModal({ onClose, onSave, saving }) {
-  const [form, setForm] = useState({ name: "", contact: "", phone: "", email: "", address: "", type: "", consultType: "신규인증", status: "상담중", contractAmount: 0, memo: "" });
+  const [form, setForm] = useState({ name: "", contact: "", phone: "", email: "", address: "", type: "", consultType: "신규인증", status: "상담중", consultFee: 0, maintenanceFee: 0, memo: "" });
   const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 
   const handleSave = () => {
     if (!form.name.trim()) return alert("업체명을 입력해주세요.");
-    onSave({ ...form, contractAmount: Number(form.contractAmount) || 0 });
+    onSave({ ...form, consultFee: Number(form.consultFee) || 0, maintenanceFee: Number(form.maintenanceFee) || 0 });
   };
 
   return (
@@ -570,6 +594,16 @@ function AddClientModal({ onClose, onSave, saving }) {
             <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, appearance: "auto" }}>
               {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>컨설팅 비용 (원)</label>
+              <input type="number" value={form.consultFee} onChange={e => setForm({ ...form, consultFee: e.target.value })} style={inputStyle} placeholder="0" />
+            </div>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>사후관리 비용 (원)</label>
+              <input type="number" value={form.maintenanceFee} onChange={e => setForm({ ...form, maintenanceFee: e.target.value })} style={inputStyle} placeholder="0" />
+            </div>
           </div>
           <div>
             <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
