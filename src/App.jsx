@@ -368,6 +368,7 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
     { key: "info", label: "기본 정보", icon: "📋" },
     { key: "records", label: "상담 기록", icon: "📝" },
     { key: "contract", label: "계약/매출", icon: "💰" },
+    { key: "haccp", label: "HACCP관리", icon: "🔬" },
   ];
 
   const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
@@ -593,6 +594,230 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
           </div>
         </div>
       )}
+
+      {/* ── HACCP Tab ── */}
+      {activeTab === "haccp" && (
+        <HaccpManagement clientId={client.id} />
+      )}
+    </div>
+  );
+}
+
+// ─── HACCP 관리 컴포넌트 ───
+const HACCP_CATEGORIES = [
+  { key: "haccp_education", label: "HACCP교육 수료", icon: "🎓" },
+  { key: "hygiene_education", label: "위생교육", icon: "🧼" },
+  { key: "validity_evaluation", label: "유효성평가", icon: "✅" },
+  { key: "external_calibration", label: "계측기기 외부 검교정", icon: "🔧" },
+  { key: "internal_calibration", label: "계측기기 자체검교정", icon: "⚙️" },
+  { key: "water_test", label: "수질검사", icon: "💧" },
+  { key: "self_evaluation", label: "자체평가", icon: "📊" },
+];
+
+function HaccpManagement({ clientId }) {
+  const [records, setRecords] = useState([]);
+  const [waterConfig, setWaterConfig] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [openCategory, setOpenCategory] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  // ── 데이터 로딩 ──
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const { data: recs } = await supabase
+      .from("haccp_records")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("record_date", { ascending: false });
+
+    const { data: wc } = await supabase
+      .from("water_test_config")
+      .select("*")
+      .eq("client_id", clientId)
+      .single();
+
+    setRecords(recs || []);
+    setWaterConfig(wc || null);
+    setLoading(false);
+  }, [clientId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── 기록 추가 ──
+  const addRecord = async (category, itemName, recordDate, memo, file) => {
+    setSaving(true);
+    let fileUrl = "";
+    let fileName = "";
+
+    // 파일 업로드
+    if (file) {
+      const ext = file.name.split(".").pop();
+      const path = `${clientId}/${category}/${Date.now()}.${ext}`;
+      const { error: uploadErr } = await supabase.storage
+        .from("haccp-files")
+        .upload(path, file);
+      if (!uploadErr) {
+        const { data: urlData } = supabase.storage
+          .from("haccp-files")
+          .getPublicUrl(path);
+        fileUrl = urlData.publicUrl;
+        fileName = file.name;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("haccp_records")
+      .insert([{ client_id: clientId, category, item_name: itemName, record_date: recordDate || null, memo, file_url: fileUrl, file_name: fileName }])
+      .select()
+      .single();
+
+    if (!error && data) {
+      setRecords(prev => [data, ...prev]);
+    }
+    setSaving(false);
+    return !error;
+  };
+
+  // ── 기록 삭제 ──
+  const deleteRecord = async (id) => {
+    const { error } = await supabase.from("haccp_records").delete().eq("id", id);
+    if (!error) setRecords(prev => prev.filter(r => r.id !== id));
+  };
+
+  // ── 수질검사 타입 설정 ──
+  const setWaterType = async (type) => {
+    if (waterConfig) {
+      await supabase.from("water_test_config").update({ water_type: type }).eq("id", waterConfig.id);
+      setWaterConfig({ ...waterConfig, water_type: type });
+    } else {
+      const { data } = await supabase.from("water_test_config").insert([{ client_id: clientId, water_type: type }]).select().single();
+      if (data) setWaterConfig(data);
+    }
+  };
+
+  const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  if (loading) return <LoadingSpinner message="HACCP 데이터 로딩 중..." />;
+
+  return (
+    <div>
+      <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 16px 0" }}>HACCP 관리</h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        {HACCP_CATEGORIES.map(cat => {
+          const catRecords = records.filter(r => r.category === cat.key);
+          const isOpen = openCategory === cat.key;
+
+          return (
+            <div key={cat.key} style={{ background: "white", borderRadius: "14px", border: isOpen ? "2px solid #1a1a2e" : "1px solid #e8ecf2", overflow: "hidden" }}>
+              {/* 카테고리 헤더 */}
+              <div onClick={() => setOpenCategory(isOpen ? null : cat.key)} style={{ padding: "16px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "18px" }}>{cat.icon}</span>
+                <span style={{ fontSize: "14px", fontWeight: 700, color: "#1a1a2e", flex: 1 }}>{cat.label}</span>
+                <span style={{ fontSize: "12px", color: "#94a3b8", background: "#f1f5f9", padding: "2px 10px", borderRadius: "10px" }}>{catRecords.length}건</span>
+                <span style={{ fontSize: "14px", color: "#94a3b8", transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
+              </div>
+
+              {/* 카테고리 내용 */}
+              {isOpen && (
+                <div style={{ padding: "0 20px 20px", borderTop: "1px solid #f1f5f9" }}>
+                  {/* 수질검사 타입 선택 */}
+                  {cat.key === "water_test" && (
+                    <div style={{ padding: "14px 0", borderBottom: "1px solid #f1f5f9", marginBottom: "12px" }}>
+                      <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, marginBottom: "8px" }}>수질 유형</div>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        {["상수도", "지하수"].map(t => (
+                          <button key={t} onClick={() => setWaterType(t)} style={{ padding: "8px 18px", borderRadius: "10px", border: (waterConfig?.water_type || "상수도") === t ? "2px solid #0284c7" : "1px solid #e2e8f0", background: (waterConfig?.water_type || "상수도") === t ? "#e0f2fe" : "white", color: (waterConfig?.water_type || "상수도") === t ? "#0284c7" : "#64748b", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>{t}</button>
+                        ))}
+                      </div>
+                      {(waterConfig?.water_type || "상수도") === "상수도" && (
+                        <div style={{ marginTop: "10px", fontSize: "13px", color: "#64748b", background: "#f8fafc", padding: "10px 14px", borderRadius: "10px" }}>상수도는 별도 검사일자 기록이 필요하지 않습니다.</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 수질검사 - 상수도인 경우 기록 추가 숨김 */}
+                  {!(cat.key === "water_test" && (waterConfig?.water_type || "상수도") === "상수도") && (
+                    <HaccpRecordForm category={cat.key} onAdd={addRecord} saving={saving} inputStyle={inputStyle} />
+                  )}
+
+                  {/* 기록 목록 */}
+                  <div style={{ maxHeight: catRecords.length > 3 ? "240px" : "auto", overflowY: catRecords.length > 3 ? "auto" : "visible", marginTop: "12px" }}>
+                    {catRecords.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "16px 0" }}>등록된 기록이 없습니다.</p>}
+                    {catRecords.map(r => (
+                      <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "12px", borderRadius: "10px", background: "#f8fafc", marginBottom: "8px" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {r.item_name && <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a2e", marginBottom: "2px" }}>{r.item_name}</div>}
+                          {r.record_date && <div style={{ fontSize: "12px", color: "#64748b" }}>{formatDate(r.record_date)}</div>}
+                          {r.memo && <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px", whiteSpace: "pre-wrap" }}>{r.memo}</div>}
+                          {r.file_url && (
+                            <a href={r.file_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", marginTop: "4px", display: "inline-flex", alignItems: "center", gap: "4px", textDecoration: "none" }}>
+                              📎 {r.file_name || "첨부파일"}
+                            </a>
+                          )}
+                        </div>
+                        <button onClick={() => deleteRecord(r.id)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "16px", cursor: "pointer", padding: "2px 6px", flexShrink: 0 }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── HACCP 기록 추가 폼 ───
+function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
+  const [itemName, setItemName] = useState("");
+  const [recordDate, setRecordDate] = useState(new Date().toISOString().split("T")[0]);
+  const [memo, setMemo] = useState("");
+  const [file, setFile] = useState(null);
+
+  const needsItemName = ["validity_evaluation", "external_calibration", "internal_calibration"].includes(category);
+  const itemLabel = category === "validity_evaluation" ? "CCP명 (예: CCP1-가열)" :
+    category === "external_calibration" ? "계측기기명" :
+    category === "internal_calibration" ? "계측기기명" : "";
+
+  const handleSubmit = async () => {
+    if (needsItemName && !itemName.trim()) return alert("항목명을 입력해주세요.");
+    const success = await onAdd(category, itemName, recordDate, memo, file);
+    if (success) {
+      setItemName("");
+      setRecordDate(new Date().toISOString().split("T")[0]);
+      setMemo("");
+      setFile(null);
+    }
+  };
+
+  return (
+    <div style={{ background: "#f8fafc", borderRadius: "12px", padding: "16px", marginTop: "12px", border: "1px solid #e2e8f0" }}>
+      <div style={{ display: "grid", gap: "10px" }}>
+        {needsItemName && (
+          <div>
+            <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>{itemLabel}</label>
+            <input value={itemName} onChange={e => setItemName(e.target.value)} style={inputStyle} placeholder={itemLabel} />
+          </div>
+        )}
+        <div>
+          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>날짜</label>
+          <input type="date" value={recordDate} onChange={e => setRecordDate(e.target.value)} style={inputStyle} />
+        </div>
+        <div>
+          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
+          <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2} style={{ ...inputStyle, resize: "vertical" }} placeholder="메모 입력 (선택)" />
+        </div>
+        <div>
+          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>파일 첨부</label>
+          <input type="file" accept="image/*,.pdf" onChange={e => setFile(e.target.files[0] || null)} style={{ fontSize: "13px", color: "#64748b" }} />
+          {file && <div style={{ fontSize: "12px", color: "#3b82f6", marginTop: "4px" }}>📎 {file.name}</div>}
+        </div>
+        <button onClick={handleSubmit} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px", fontSize: "13px", fontWeight: 600, cursor: "pointer", opacity: saving ? 0.6 : 1, width: "100%" }}>
+          {saving ? "저장 중..." : "+ 추가"}
+        </button>
+      </div>
     </div>
   );
 }
