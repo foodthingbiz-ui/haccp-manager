@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
+import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -231,7 +232,7 @@ function Dashboard({ clients, onNavigate }) {
 }
 
 // ─── 거래처 목록 ───
-function ClientList({ clients, onNavigate, onAdd }) {
+function ClientList({ clients, onNavigate, onAdd, onExport, onImport }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("전체");
   const [filterConsultType, setFilterConsultType] = useState("전체");
@@ -252,9 +253,16 @@ function ClientList({ clients, onNavigate, onAdd }) {
           <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>거래처 목록</h2>
           <p style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>총 {filtered.length}곳</p>
         </div>
-        <button onClick={onAdd} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "12px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
-          <span style={{ fontSize: "18px" }}>+</span> 거래처 추가
-        </button>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <button onClick={onExport} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "12px", padding: "10px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>Excel 내보내기</button>
+          <label style={{ background: "#3b82f6", color: "white", borderRadius: "12px", padding: "10px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center" }}>
+            Excel 가져오기
+            <input type="file" accept=".xlsx,.xls" onChange={e => { if (e.target.files[0]) onImport(e.target.files[0]); e.target.value = ""; }} style={{ display: "none" }} />
+          </label>
+          <button onClick={onAdd} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "12px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ fontSize: "18px" }}>+</span> 거래처 추가
+          </button>
+        </div>
       </div>
       <div style={{ position: "relative", marginBottom: "14px" }}>
         <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "16px", color: "#94a3b8" }}>🔍</span>
@@ -1603,6 +1611,81 @@ export default function App() {
     }
   };
 
+  // ── Excel 내보내기 ──
+  const handleExport = () => {
+    const data = clients.map(c => ({
+      "업체명": c.name,
+      "업종": c.type,
+      "담당자": c.contact,
+      "연락처": c.phone,
+      "이메일": c.email,
+      "주소": c.address,
+      "컨설팅 종류": c.consultType,
+      "진행 상태": c.status,
+      "컨설팅 비용": c.consultFee || 0,
+      "사후관리 비용": c.maintenanceFee || 0,
+      "메모": c.memo,
+      "등록일": c.registeredAt,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "거래처 목록");
+
+    // 열 너비 설정
+    ws["!cols"] = [
+      { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 15 },
+      { wch: 25 }, { wch: 30 }, { wch: 12 }, { wch: 12 },
+      { wch: 15 }, { wch: 15 }, { wch: 30 }, { wch: 12 },
+    ];
+
+    XLSX.writeFile(wb, `거래처목록_${new Date().toISOString().split("T")[0]}.xlsx`);
+    showToast("Excel 파일이 다운로드되었습니다.");
+  };
+
+  // ── Excel 가져오기 ──
+  const handleImport = async (file) => {
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws);
+
+      if (rows.length === 0) return showToast("빈 파일입니다.", "error");
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const row of rows) {
+        const name = row["업체명"] || row["name"] || "";
+        if (!name.trim()) { failCount++; continue; }
+
+        const dbData = {
+          name: name.trim(),
+          type: row["업종"] || row["type"] || "",
+          contact: row["담당자"] || row["contact"] || "",
+          phone: row["연락처"] || row["phone"] || "",
+          email: row["이메일"] || row["email"] || "",
+          address: row["주소"] || row["address"] || "",
+          consult_type: row["컨설팅 종류"] || row["consult_type"] || "신규인증",
+          status: row["진행 상태"] || row["status"] || "상담중",
+          consult_fee: Number(row["컨설팅 비용"] || row["consult_fee"] || 0),
+          maintenance_fee: Number(row["사후관리 비용"] || row["maintenance_fee"] || 0),
+          memo: row["메모"] || row["memo"] || "",
+          registered_at: row["등록일"] || row["registered_at"] || new Date().toISOString().split("T")[0],
+        };
+
+        const { error } = await supabase.from("clients").insert([dbData]);
+        if (error) { failCount++; } else { successCount++; }
+      }
+
+      showToast(`${successCount}건 추가 완료${failCount > 0 ? `, ${failCount}건 실패` : ""}`);
+      fetchClients();
+    } catch (err) {
+      console.error("Excel 가져오기 실패:", err);
+      showToast("Excel 파일을 읽지 못했습니다.", "error");
+    }
+  };
+
   // ── 로그아웃 ──
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -1674,7 +1757,7 @@ export default function App() {
         ) : (
           <>
             {view === "dashboard" && <Dashboard clients={clients} onNavigate={navigate} />}
-            {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} />}
+            {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} onExport={handleExport} onImport={handleImport} />}
             {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} userRole={userRole} />}
             {view === "staff" && userRole === "admin" && <StaffManagement showToast={showToast} />}
           </>
