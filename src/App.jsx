@@ -622,8 +622,8 @@ function HaccpManagement({ clientId }) {
   const [openCategory, setOpenCategory] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [editData, setEditData] = useState({ item_name: "", record_date: "", memo: "", file_url: "", file_name: "" });
-  const [editFile, setEditFile] = useState(null);
+  const [editData, setEditData] = useState({ item_name: "", record_date: "", memo: "", files: [] });
+  const [editNewFiles, setEditNewFiles] = useState([]);
 
   // ── 데이터 로딩 ──
   const fetchData = useCallback(async () => {
@@ -648,23 +648,30 @@ function HaccpManagement({ clientId }) {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // ── 기록 추가 ──
-  const addRecord = async (category, itemName, recordDate, memo, file) => {
+  const addRecord = async (category, itemName, recordDate, memo, files) => {
     setSaving(true);
     let fileUrl = "";
     let fileName = "";
 
-    if (file) {
-      const ext = file.name.split(".").pop();
-      const path = `${clientId}/${category}/${Date.now()}.${ext}`;
-      const { error: uploadErr } = await supabase.storage
-        .from("haccp-files")
-        .upload(path, file);
-      if (!uploadErr) {
-        const { data: urlData } = supabase.storage
+    // 여러 파일 업로드
+    if (files && files.length > 0) {
+      const uploaded = [];
+      for (const f of files) {
+        const ext = f.name.split(".").pop();
+        const path = `${clientId}/${category}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
           .from("haccp-files")
-          .getPublicUrl(path);
-        fileUrl = urlData.publicUrl;
-        fileName = file.name;
+          .upload(path, f);
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage
+            .from("haccp-files")
+            .getPublicUrl(path);
+          uploaded.push({ url: urlData.publicUrl, name: f.name });
+        }
+      }
+      if (uploaded.length > 0) {
+        fileUrl = JSON.stringify(uploaded.map(u => u.url));
+        fileName = JSON.stringify(uploaded.map(u => u.name));
       }
     }
 
@@ -681,39 +688,61 @@ function HaccpManagement({ clientId }) {
     return !error;
   };
 
+  // ── 파일 파싱 헬퍼 (기존 단일 파일 + 새 배열 형식 모두 지원) ──
+  const parseFiles = (fileUrl, fileName) => {
+    if (!fileUrl) return [];
+    try {
+      const urls = JSON.parse(fileUrl);
+      const names = JSON.parse(fileName || "[]");
+      return urls.map((u, i) => ({ url: u, name: names[i] || "파일" }));
+    } catch {
+      return [{ url: fileUrl, name: fileName || "첨부파일" }];
+    }
+  };
+
   // ── 기록 수정 ──
   const startEdit = (r) => {
     setEditingId(r.id);
-    setEditData({ item_name: r.item_name || "", record_date: r.record_date || "", memo: r.memo || "", file_url: r.file_url || "", file_name: r.file_name || "" });
-    setEditFile(null);
+    setEditData({
+      item_name: r.item_name || "",
+      record_date: r.record_date || "",
+      memo: r.memo || "",
+      files: parseFiles(r.file_url, r.file_name),
+    });
+    setEditNewFiles([]);
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setEditData({ item_name: "", record_date: "", memo: "", file_url: "", file_name: "" });
-    setEditFile(null);
+    setEditData({ item_name: "", record_date: "", memo: "", files: [] });
+    setEditNewFiles([]);
+  };
+
+  const removeEditFile = (idx) => {
+    setEditData(prev => ({ ...prev, files: prev.files.filter((_, i) => i !== idx) }));
   };
 
   const saveEdit = async () => {
     setSaving(true);
-    let fileUrl = editData.file_url;
-    let fileName = editData.file_name;
+    const allFiles = [...editData.files];
 
-    // 새 파일이 선택된 경우 업로드
-    if (editFile) {
-      const ext = editFile.name.split(".").pop();
-      const path = `${clientId}/${Date.now()}.${ext}`;
+    // 새 파일 업로드
+    for (const f of editNewFiles) {
+      const ext = f.name.split(".").pop();
+      const path = `${clientId}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const { error: uploadErr } = await supabase.storage
         .from("haccp-files")
-        .upload(path, editFile);
+        .upload(path, f);
       if (!uploadErr) {
         const { data: urlData } = supabase.storage
           .from("haccp-files")
           .getPublicUrl(path);
-        fileUrl = urlData.publicUrl;
-        fileName = editFile.name;
+        allFiles.push({ url: urlData.publicUrl, name: f.name });
       }
     }
+
+    const fileUrl = allFiles.length > 0 ? JSON.stringify(allFiles.map(f => f.url)) : "";
+    const fileName = allFiles.length > 0 ? JSON.stringify(allFiles.map(f => f.name)) : "";
 
     const { data, error } = await supabase
       .from("haccp_records")
@@ -726,8 +755,8 @@ function HaccpManagement({ clientId }) {
       setRecords(prev => prev.map(r => r.id === editingId ? { ...r, ...data } : r));
     }
     setEditingId(null);
-    setEditData({ item_name: "", record_date: "", memo: "", file_url: "", file_name: "" });
-    setEditFile(null);
+    setEditData({ item_name: "", record_date: "", memo: "", files: [] });
+    setEditNewFiles([]);
     setSaving(false);
   };
 
@@ -818,16 +847,29 @@ function HaccpManagement({ clientId }) {
                             </div>
                             <div>
                               <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>첨부파일</label>
-                              {editData.file_url && !editFile && (
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                                  <a href={editData.file_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", display: "inline-flex", alignItems: "center", gap: "4px", textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: "6px" }}>
-                                    📎 {editData.file_name || "현재 파일"}
-                                  </a>
+                              {/* 기존 파일 목록 (삭제 가능) */}
+                              {editData.files.length > 0 && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px", maxHeight: editData.files.length > 3 ? "120px" : "auto", overflowY: editData.files.length > 3 ? "auto" : "visible" }}>
+                                  {editData.files.map((f, idx) => (
+                                    <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", background: "#eff6ff", padding: "6px 10px", borderRadius: "8px" }}>
+                                      <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", textDecoration: "none", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {f.name}</a>
+                                      <button onClick={() => removeEditFile(idx)} style={{ background: "none", border: "none", color: "#ef4444", fontSize: "14px", cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>✕</button>
+                                    </div>
+                                  ))}
                                 </div>
                               )}
-                              <input type="file" accept="image/*,.pdf" onChange={e => setEditFile(e.target.files[0] || null)} style={{ fontSize: "13px", color: "#64748b" }} />
-                              {editFile && <div style={{ fontSize: "12px", color: "#0f766e", marginTop: "4px" }}>새 파일: 📎 {editFile.name}</div>}
-                              {!editFile && editData.file_url && <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px" }}>새 파일을 선택하면 기존 파일이 교체됩니다</div>}
+                              {/* 새 파일 추가 */}
+                              <input type="file" accept="image/*,.pdf" multiple onChange={e => setEditNewFiles(prev => [...prev, ...Array.from(e.target.files)])} style={{ fontSize: "13px", color: "#64748b" }} />
+                              {editNewFiles.length > 0 && (
+                                <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                                  {editNewFiles.map((f, idx) => (
+                                    <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#0f766e" }}>
+                                      <span style={{ flex: 1 }}>📎 {f.name} (새 파일)</span>
+                                      <button onClick={() => setEditNewFiles(prev => prev.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", color: "#ef4444", fontSize: "14px", cursor: "pointer", padding: "0 4px" }}>✕</button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             <div style={{ display: "flex", gap: "8px" }}>
                               <button onClick={cancelEdit} style={{ flex: 1, padding: "9px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
@@ -842,9 +884,13 @@ function HaccpManagement({ clientId }) {
                               {r.record_date && <div style={{ fontSize: "12px", color: "#64748b" }}>{formatDate(r.record_date)}</div>}
                               {r.memo && <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px", whiteSpace: "pre-wrap" }}>{r.memo}</div>}
                               {r.file_url && (
-                                <a href={r.file_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", marginTop: "6px", display: "inline-flex", alignItems: "center", gap: "4px", textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: "6px" }}>
-                                  📎 {r.file_name || "첨부파일 보기"}
-                                </a>
+                                <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px", maxHeight: parseFiles(r.file_url, r.file_name).length > 3 ? "100px" : "auto", overflowY: parseFiles(r.file_url, r.file_name).length > 3 ? "auto" : "visible" }}>
+                                  {parseFiles(r.file_url, r.file_name).map((f, idx) => (
+                                    <a key={idx} href={f.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", display: "inline-flex", alignItems: "center", gap: "4px", textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: "6px", width: "fit-content" }}>
+                                      📎 {f.name}
+                                    </a>
+                                  ))}
+                                </div>
                               )}
                             </div>
                             <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
@@ -871,7 +917,7 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
   const [itemName, setItemName] = useState("");
   const [recordDate, setRecordDate] = useState(new Date().toISOString().split("T")[0]);
   const [memo, setMemo] = useState("");
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
 
   const needsItemName = ["validity_evaluation", "external_calibration", "internal_calibration", "etc_note"].includes(category);
   const isEtcNote = category === "etc_note";
@@ -883,14 +929,16 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
   const handleSubmit = async () => {
     if (needsItemName && !itemName.trim()) return alert(isEtcNote ? "제목을 입력해주세요." : "항목명을 입력해주세요.");
     if (isEtcNote && !memo.trim()) return alert("내용을 입력해주세요.");
-    const success = await onAdd(category, itemName, isEtcNote ? null : recordDate, memo, file);
+    const success = await onAdd(category, itemName, isEtcNote ? null : recordDate, memo, files.length > 0 ? files : null);
     if (success) {
       setItemName("");
       setRecordDate(new Date().toISOString().split("T")[0]);
       setMemo("");
-      setFile(null);
+      setFiles([]);
     }
   };
+
+  const removeFile = (idx) => setFiles(prev => prev.filter((_, i) => i !== idx));
 
   return (
     <div style={{ background: "#f8fafc", borderRadius: "12px", padding: "16px", marginTop: "12px", border: "1px solid #e2e8f0" }}>
@@ -912,9 +960,18 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
           <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={isEtcNote ? 5 : 2} style={{ ...inputStyle, resize: "vertical" }} placeholder={isEtcNote ? "내용을 입력하세요..." : "메모 입력 (선택)"} />
         </div>
         <div>
-          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>파일 첨부</label>
-          <input type="file" accept="image/*,.pdf" onChange={e => setFile(e.target.files[0] || null)} style={{ fontSize: "13px", color: "#64748b" }} />
-          {file && <div style={{ fontSize: "12px", color: "#3b82f6", marginTop: "4px" }}>📎 {file.name}</div>}
+          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>파일 첨부 (여러 개 가능)</label>
+          <input type="file" accept="image/*,.pdf" multiple onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} style={{ fontSize: "13px", color: "#64748b" }} />
+          {files.length > 0 && (
+            <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px", maxHeight: files.length > 3 ? "100px" : "auto", overflowY: files.length > 3 ? "auto" : "visible" }}>
+              {files.map((f, idx) => (
+                <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#3b82f6" }}>
+                  <span style={{ flex: 1 }}>📎 {f.name}</span>
+                  <button onClick={() => removeFile(idx)} style={{ background: "none", border: "none", color: "#ef4444", fontSize: "14px", cursor: "pointer", padding: "0 4px" }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <button onClick={handleSubmit} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px", fontSize: "13px", fontWeight: 600, cursor: "pointer", opacity: saving ? 0.6 : 1, width: "100%" }}>
           {saving ? "저장 중..." : "+ 추가"}
