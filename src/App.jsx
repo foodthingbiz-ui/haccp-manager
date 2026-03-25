@@ -173,47 +173,114 @@ function ConsultBadge({ consultType, size = "md" }) {
   return <span style={{ background: cfg.bg, color: cfg.color, padding: pad, borderRadius: "20px", fontSize: fs, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px", border: `1px solid ${cfg.color}22` }}><span>{cfg.icon}</span> {consultType}</span>;
 }
 
+// ─── D-Day 계산 함수 ───
+function calcDday(renewalDate) {
+  if (!renewalDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(renewalDate);
+  target.setHours(0, 0, 0, 0);
+  return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+}
+
+function formatDday(days) {
+  if (days === 0) return "D-Day";
+  if (days > 0) return `D-${days}`;
+  return `D+${Math.abs(days)}`;
+}
+
+function ddayColor(days) {
+  if (days <= 0) return { bg: "#fee2e2", color: "#991b1b" };
+  if (days <= 3) return { bg: "#fee2e2", color: "#991b1b" };
+  if (days <= 7) return { bg: "#fef3c7", color: "#92400e" };
+  return { bg: "#eff6ff", color: "#1e40af" };
+}
+
 // ─── 대시보드 ───
 function Dashboard({ clients, onNavigate }) {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState("전체");
-  const [alerts, setAlerts] = useState([]);
+  const [activeAlerts, setActiveAlerts] = useState([]);
+  const [completedAlerts, setCompletedAlerts] = useState([]);
+  const [alertTab, setAlertTab] = useState("active");
 
   // 갱신 알림 데이터 로딩
   useEffect(() => {
     const fetchAlerts = async () => {
-      const { data } = await supabase
+      const catLabels = {};
+      HACCP_CATEGORIES.forEach(c => { catLabels[c.key] = c.label; });
+
+      // 진행 중 알림
+      const { data: haccpData } = await supabase
         .from("haccp_records")
         .select("*, clients!inner(name)")
         .eq("alert_enabled", true)
         .not("renewal_date", "is", null)
         .order("renewal_date", { ascending: true });
 
-      if (!data) return;
-      const today = new Date().toISOString().split("T")[0];
-      const alertItems = [];
-      const catLabels = {};
-      HACCP_CATEGORIES.forEach(c => { catLabels[c.key] = c.label; });
+      if (haccpData) {
+        const today = new Date().toISOString().split("T")[0];
+        const items = [];
+        haccpData.forEach(r => {
+          const alertDate = calcAlertDate(r.renewal_date, r.alert_timing);
+          if (alertDate && alertDate <= today) {
+            items.push({
+              id: r.id, clientId: r.client_id,
+              clientName: r.clients?.name || "",
+              category: catLabels[r.category] || r.category,
+              categoryKey: r.category,
+              itemName: r.item_name || "",
+              renewalDate: r.renewal_date,
+              alertTiming: ALERT_TIMINGS[r.alert_timing] || r.alert_timing,
+              ddays: calcDday(r.renewal_date),
+            });
+          }
+        });
+        setActiveAlerts(items);
+      }
 
-      data.forEach(r => {
-        const alertDate = calcAlertDate(r.renewal_date, r.alert_timing);
-        if (alertDate && alertDate <= today && r.renewal_date >= today) {
-          alertItems.push({
-            id: r.id,
-            clientId: r.client_id,
-            clientName: r.clients?.name || "",
-            category: catLabels[r.category] || r.category,
-            itemName: r.item_name || "",
-            renewalDate: r.renewal_date,
-            alertTiming: ALERT_TIMINGS[r.alert_timing] || r.alert_timing,
-            daysLeft: Math.ceil((new Date(r.renewal_date) - new Date(today)) / (1000 * 60 * 60 * 24)),
-          });
-        }
-      });
-      setAlerts(alertItems);
+      // 완료 알림
+      const { data: historyData } = await supabase
+        .from("alert_history")
+        .select("*, clients!inner(name)")
+        .order("completed_at", { ascending: false })
+        .limit(30);
+
+      if (historyData) {
+        setCompletedAlerts(historyData.map(h => ({
+          id: h.id,
+          clientId: h.client_id,
+          clientName: h.clients?.name || "",
+          category: catLabels[h.category] || h.category,
+          itemName: h.item_name || "",
+          renewalDate: h.renewal_date,
+          completedAt: h.completed_at,
+        })));
+      }
     };
     fetchAlerts();
   }, []);
+
+  // 완료 처리
+  const handleComplete = async (alert) => {
+    const { error } = await supabase.from("alert_history").insert([{
+      haccp_record_id: alert.id, client_id: alert.clientId,
+      category: alert.categoryKey, item_name: alert.itemName,
+      renewal_date: alert.renewalDate, alert_timing: alert.alertTiming,
+    }]);
+    if (error) return;
+
+    // alert_enabled 끄기
+    await supabase.from("haccp_records").update({ alert_enabled: false }).eq("id", alert.id);
+
+    // 즉시 UI 반영
+    setActiveAlerts(prev => prev.filter(a => a.id !== alert.id));
+    setCompletedAlerts(prev => [{
+      id: Date.now(), clientId: alert.clientId, clientName: alert.clientName,
+      category: alert.category, itemName: alert.itemName,
+      renewalDate: alert.renewalDate, completedAt: new Date().toISOString(),
+    }, ...prev]);
+  };
 
   // 거래처 등록일에서 연도 목록 추출
   const years = useMemo(() => {
@@ -258,26 +325,55 @@ function Dashboard({ clients, onNavigate }) {
           ))}
         </div>
       </div>
-      {/* 갱신 알림 */}
-      {alerts.length > 0 && (
-        <div style={{ background: "#fef2f2", borderRadius: "16px", border: "1px solid #fecaca", padding: "20px", marginBottom: "20px" }}>
-          <h3 style={{ fontSize: "15px", fontWeight: 700, color: "#991b1b", margin: "0 0 14px 0", display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "16px" }}>&#9888;</span> 갱신 알림 ({alerts.length}건)
-          </h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: alerts.length > 4 ? "260px" : "auto", overflowY: alerts.length > 4 ? "auto" : "visible" }}>
-            {alerts.map(a => (
-              <div key={a.id} onClick={() => onNavigate("detail", a.clientId)} style={{ background: "white", borderRadius: "12px", padding: "12px 16px", cursor: "pointer", border: "1px solid #fecaca", display: "flex", alignItems: "center", gap: "12px" }}>
-                <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: a.daysLeft <= 3 ? "#fee2e2" : a.daysLeft <= 7 ? "#fef3c7" : "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700, color: a.daysLeft <= 3 ? "#991b1b" : a.daysLeft <= 7 ? "#92400e" : "#1e40af", flexShrink: 0 }}>D-{a.daysLeft}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>{a.clientName}</div>
-                  <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>{a.category}{a.itemName ? ` - ${a.itemName}` : ""}</div>
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div style={{ fontSize: "12px", color: "#991b1b", fontWeight: 600 }}>{formatDate(a.renewalDate)}</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>{a.alertTiming} 알림</div>
-                </div>
+      {/* 갱신 알림 패널 */}
+      {(activeAlerts.length > 0 || completedAlerts.length > 0) && (
+        <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", marginBottom: "20px", overflow: "hidden" }}>
+          <div style={{ display: "flex", borderBottom: "1px solid #e8ecf2" }}>
+            <button onClick={() => setAlertTab("active")} style={{ flex: 1, padding: "12px", border: "none", background: alertTab === "active" ? "#fef2f2" : "transparent", color: alertTab === "active" ? "#991b1b" : "#64748b", fontSize: "13px", fontWeight: 600, cursor: "pointer", borderBottom: alertTab === "active" ? "2px solid #991b1b" : "2px solid transparent" }}>
+              진행 중 ({activeAlerts.length})
+            </button>
+            <button onClick={() => setAlertTab("completed")} style={{ flex: 1, padding: "12px", border: "none", background: alertTab === "completed" ? "#f0fdf4" : "transparent", color: alertTab === "completed" ? "#065f46" : "#64748b", fontSize: "13px", fontWeight: 600, cursor: "pointer", borderBottom: alertTab === "completed" ? "2px solid #065f46" : "2px solid transparent" }}>
+              완료 ({completedAlerts.length})
+            </button>
+          </div>
+          <div style={{ padding: "16px" }}>
+            {alertTab === "active" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: activeAlerts.length > 5 ? "320px" : "auto", overflowY: activeAlerts.length > 5 ? "auto" : "visible" }}>
+                {activeAlerts.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>진행 중인 알림이 없습니다.</p>}
+                {activeAlerts.map(a => {
+                  const dc = ddayColor(a.ddays);
+                  return (
+                    <div key={a.id} style={{ background: "#f8fafc", borderRadius: "12px", padding: "12px 16px", border: a.ddays <= 0 ? "1px solid #fecaca" : "1px solid #e8ecf2", display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{ width: "48px", height: "48px", borderRadius: "10px", background: dc.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 700, color: dc.color, flexShrink: 0 }}>{formatDday(a.ddays)}</div>
+                      <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onNavigate("detail", a.clientId)}>
+                        <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>{a.clientName}</div>
+                        <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>{a.category}{a.itemName ? ` - ${a.itemName}` : ""}</div>
+                        <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>갱신일: {formatDate(a.renewalDate)} / {a.alertTiming} 알림</div>
+                      </div>
+                      <button onClick={() => handleComplete(a)} style={{ background: "#d1fae5", border: "none", borderRadius: "8px", padding: "6px 14px", fontSize: "12px", color: "#065f46", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>완료</button>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
+            )}
+            {alertTab === "completed" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: completedAlerts.length > 5 ? "320px" : "auto", overflowY: completedAlerts.length > 5 ? "auto" : "visible" }}>
+                {completedAlerts.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>완료된 알림이 없습니다.</p>}
+                {completedAlerts.map(a => (
+                  <div key={a.id} onClick={() => onNavigate("detail", a.clientId)} style={{ background: "#f8fafc", borderRadius: "12px", padding: "12px 16px", border: "1px solid #e8ecf2", display: "flex", alignItems: "center", gap: "12px", cursor: "pointer", opacity: 0.7 }}>
+                    <div style={{ width: "48px", height: "48px", borderRadius: "10px", background: "#d1fae5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", flexShrink: 0 }}>&#10003;</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>{a.clientName}</div>
+                      <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>{a.category}{a.itemName ? ` - ${a.itemName}` : ""}</div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontSize: "11px", color: "#94a3b8" }}>갱신일: {formatDate(a.renewalDate)}</div>
+                      <div style={{ fontSize: "11px", color: "#065f46" }}>완료: {formatDate(a.completedAt)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
