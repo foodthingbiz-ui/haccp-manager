@@ -1160,6 +1160,16 @@ function StaffManagement({ showToast }) {
     showToast("직원이 삭제되었습니다.");
   };
 
+  // ── 직원 비밀번호 초기화 이메일 발송 ──
+  const resetStaffPassword = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) {
+      showToast("이메일 발송에 실패했습니다.", "error");
+    } else {
+      showToast(`${email}로 비밀번호 재설정 이메일이 발송되었습니다.`, "info");
+    }
+  };
+
   if (loading) return <LoadingSpinner message="직원 목록 로딩 중..." />;
 
   const activeStaff = staffList.filter(s => s.is_active !== false);
@@ -1218,11 +1228,12 @@ function StaffManagement({ showToast }) {
                   <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>{s.name || "이름 없음"}</div>
                   <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "2px" }}>{s.email}</div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
                   <select value={s.role || "staff"} onChange={e => changeRole(s.id, e.target.value)} style={{ padding: "4px 8px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "12px", color: "#64748b", background: "white", cursor: "pointer" }}>
                     <option value="admin">관리자</option>
                     <option value="staff">일반</option>
                   </select>
+                  <button onClick={() => resetStaffPassword(s.email)} style={{ background: "#dbeafe", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#1e40af", cursor: "pointer", fontWeight: 600 }}>PW초기화</button>
                   <button onClick={() => toggleActive(s.id, true)} style={{ background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#991b1b", cursor: "pointer", fontWeight: 600 }}>비활성화</button>
                 </div>
               </div>
@@ -1543,6 +1554,16 @@ export default function App() {
     showToast("거래처가 삭제되었습니다.");
   };
 
+  // ── 본인 비밀번호 재설정 이메일 발송 ──
+  const handleResetMyPassword = async () => {
+    const { error } = await supabase.auth.resetPasswordForEmail(session.user.email);
+    if (error) {
+      showToast("이메일 발송에 실패했습니다.", "error");
+    } else {
+      showToast("비밀번호 재설정 이메일이 발송되었습니다. 이메일을 확인해주세요.", "info");
+    }
+  };
+
   // ── 로그아웃 ──
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -1579,8 +1600,9 @@ export default function App() {
           <span style={{ fontSize: "22px" }}>🏢</span>
           <span style={{ fontSize: "17px", fontWeight: 700, letterSpacing: "-0.3px" }}>거래처 관리</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "12px", opacity: 0.6 }}>{session.user.email}</span>
+          <button onClick={handleResetMyPassword} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "8px", padding: "6px 12px", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>비밀번호 변경</button>
           <button onClick={handleLogout} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "8px", padding: "6px 12px", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>로그아웃</button>
         </div>
       </div>
