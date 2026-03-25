@@ -81,10 +81,10 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 - [x] 검색 + 상태/종류 필터
 - [x] 토스트 알림 (성공/실패)
 - [x] 로딩 스피너
-- [x] HACCP관리 탭 (7개 항목 + 메모 + 파일첨부)
+- [x] HACCP관리 탭 (8개 항목 + 메모 + 다중 파일첨부)
+- [x] 직원 관리 탭 (admin 전용: 추가/활성화/비활성화/역할변경)
 
 ## 아직 남은 기능
-- [ ] 직원 관리 탭 (admin 전용)
 - [ ] Excel 내보내기/가져오기 (DB 버전)
 
 ## 코드 수정 시 주의사항
