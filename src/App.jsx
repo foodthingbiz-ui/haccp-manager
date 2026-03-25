@@ -1058,6 +1058,7 @@ function StaffManagement({ showToast }) {
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
+      .neq("is_deleted", true)
       .order("created_at", { ascending: true });
     if (!error) setStaffList(data || []);
     setLoading(false);
@@ -1146,7 +1147,7 @@ function StaffManagement({ showToast }) {
   const deleteStaff = async (staffId) => {
     const { error } = await supabase
       .from("profiles")
-      .update({ is_active: false })
+      .update({ is_active: false, is_deleted: true })
       .eq("id", staffId);
 
     if (error) {
@@ -1350,11 +1351,11 @@ export default function App() {
     const fetchRole = async () => {
       const { data } = await supabase
         .from("profiles")
-        .select("role, is_active")
+        .select("role, is_active, is_deleted")
         .eq("id", session.user.id)
         .single();
       if (data) {
-        if (!data.is_active) {
+        if (!data.is_active || data.is_deleted) {
           showToast("비활성화된 계정입니다. 관리자에게 문의하세요.", "error");
           await supabase.auth.signOut();
           setSession(null);
