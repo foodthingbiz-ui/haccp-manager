@@ -52,6 +52,8 @@ function dbToClient(row, records = []) {
     bizNumber: row.biz_number || "",
     bizTypes: (() => { try { return JSON.parse(row.biz_types || "[]"); } catch { return []; } })(),
     contractDate: row.contract_date || "",
+    certified: row.certified || false,
+    certifiedDate: row.certified_date || "",
     memo: row.memo || "",
     registeredAt: row.registered_at || "",
     records: records.map(r => ({
@@ -83,6 +85,8 @@ function clientToDb(data) {
   if (data.bizNumber !== undefined) result.biz_number = data.bizNumber;
   if (data.bizTypes !== undefined) result.biz_types = JSON.stringify(data.bizTypes);
   if (data.contractDate !== undefined) result.contract_date = data.contractDate || null;
+  if (data.certified !== undefined) result.certified = data.certified;
+  if (data.certifiedDate !== undefined) result.certified_date = data.certifiedDate || null;
   if (data.memo !== undefined) result.memo = data.memo;
   if (data.registeredAt !== undefined) result.registered_at = data.registeredAt;
   return result;
@@ -1033,6 +1037,7 @@ function AddClientModal({ onClose, onSave, saving }) {
     contact: "", phone: "", email: "",
     consultType: "신규인증", status: "상담중",
     consultFee: 0, maintenanceFee: 0, contractDate: "",
+    certified: false, certifiedDate: "",
     memo: "",
   });
   const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
@@ -1049,11 +1054,15 @@ function AddClientModal({ onClose, onSave, saving }) {
 
   const handleSave = () => {
     if (!form.name.trim()) return alert("업체명을 입력해주세요.");
+    const cf = isMaintenanceOnly ? 0 : (Number(form.consultFee) || 0);
+    const mf = isConsultOnly ? 0 : (Number(form.maintenanceFee) || 0);
+    const autoStatus = (cf > 0 || mf > 0) ? "계약완료" : "상담중";
     onSave({
       ...form,
       type: form.bizTypes.map(bt => bt.type).filter(Boolean).join(", "),
-      consultFee: isMaintenanceOnly ? 0 : (Number(form.consultFee) || 0),
-      maintenanceFee: isConsultOnly ? 0 : (Number(form.maintenanceFee) || 0),
+      status: autoStatus,
+      consultFee: cf,
+      maintenanceFee: mf,
     });
   };
 
@@ -1078,6 +1087,22 @@ function AddClientModal({ onClose, onSave, saving }) {
           <div>
             <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>주소</label>
             <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} style={inputStyle} placeholder="업체 주소" />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: form.certified ? "1fr 1fr" : "1fr", gap: "12px" }}>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>인증여부</label>
+              <div style={{ display: "flex", gap: "8px" }}>
+                {[["인증", true], ["미인증", false]].map(([label, val]) => (
+                  <button key={label} type="button" onClick={() => setForm({ ...form, certified: val, certifiedDate: val ? form.certifiedDate : "" })} style={{ flex: 1, padding: "8px", borderRadius: "10px", border: form.certified === val ? "2px solid #1a1a2e" : "1px solid #e2e8f0", background: form.certified === val ? (val ? "#d1fae5" : "#f1f5f9") : "white", color: form.certified === val ? (val ? "#065f46" : "#64748b") : "#64748b", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>{label}</button>
+                ))}
+              </div>
+            </div>
+            {form.certified && (
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>인증일자</label>
+                <input type="date" value={form.certifiedDate} onChange={e => setForm({ ...form, certifiedDate: e.target.value })} style={inputStyle} />
+              </div>
+            )}
           </div>
 
           {/* ── 업종/인허가 정보 ── */}
@@ -1147,31 +1172,16 @@ function AddClientModal({ onClose, onSave, saving }) {
           {/* ── 컨설팅 정보 ── */}
           <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
             <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", marginBottom: "10px" }}>컨설팅 정보</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-              <div>
-                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>컨설팅 종류</label>
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                  {Object.entries(CONSULT_TYPES).map(([ct, cfg]) => (
-                    <button key={ct} type="button" onClick={() => setForm({ ...form, consultType: ct, consultFee: ct === "정기 사후관리" ? 0 : form.consultFee, maintenanceFee: ct !== "정기 사후관리" ? 0 : form.maintenanceFee })} style={{ padding: "6px 10px", borderRadius: "8px", border: form.consultType === ct ? `2px solid ${cfg.color}` : "1px solid #e2e8f0", background: form.consultType === ct ? cfg.bg : "white", color: form.consultType === ct ? cfg.color : "#64748b", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
-                      {cfg.icon} {ct}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>진행 상태</label>
-                <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, appearance: "auto" }}>
-                  {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>컨설팅 종류</label>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {Object.entries(CONSULT_TYPES).map(([ct, cfg]) => (
+                  <button key={ct} type="button" onClick={() => setForm({ ...form, consultType: ct, consultFee: ct === "정기 사후관리" ? 0 : form.consultFee, maintenanceFee: ct !== "정기 사후관리" ? 0 : form.maintenanceFee })} style={{ padding: "6px 10px", borderRadius: "8px", border: form.consultType === ct ? `2px solid ${cfg.color}` : "1px solid #e2e8f0", background: form.consultType === ct ? cfg.bg : "white", color: form.consultType === ct ? cfg.color : "#64748b", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
+                    {cfg.icon} {ct}
+                  </button>
+                ))}
               </div>
             </div>
-            {/* 계약일자 - 계약완료 시에만 */}
-            {form.status === "계약완료" && (
-              <div style={{ marginTop: "12px" }}>
-                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>계약일자</label>
-                <input type="date" value={form.contractDate} onChange={e => setForm({ ...form, contractDate: e.target.value })} style={inputStyle} />
-              </div>
-            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
               <div>
                 <label style={{ fontSize: "12px", color: isMaintenanceOnly ? "#cbd5e1" : "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>컨설팅 비용 (원)</label>
@@ -1182,6 +1192,13 @@ function AddClientModal({ onClose, onSave, saving }) {
                 <input type="number" value={form.maintenanceFee} onChange={e => setForm({ ...form, maintenanceFee: e.target.value })} disabled={isConsultOnly} style={{ ...inputStyle, background: isConsultOnly ? "#f8fafc" : "white", color: isConsultOnly ? "#cbd5e1" : "#1a1a2e" }} placeholder="0" />
               </div>
             </div>
+            {/* 계약일자 - 비용이 입력되면 표시 */}
+            {(Number(form.consultFee) > 0 || Number(form.maintenanceFee) > 0) && (
+              <div style={{ marginTop: "12px" }}>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>계약일자</label>
+                <input type="date" value={form.contractDate} onChange={e => setForm({ ...form, contractDate: e.target.value })} style={inputStyle} />
+              </div>
+            )}
           </div>
 
           {/* ── 메모 ── */}
