@@ -316,7 +316,7 @@ function ClientList({ clients, onNavigate, onAdd }) {
 }
 
 // ─── 거래처 상세 ───
-function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDelete }) {
+function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDelete, userRole }) {
   const [activeTab, setActiveTab] = useState("info");
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [newRecord, setNewRecord] = useState({ date: new Date().toISOString().split("T")[0], type: "상담", content: "" });
@@ -378,7 +378,7 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
       <div style={{ marginBottom: "24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
           <button onClick={onBack} style={{ background: "none", border: "none", color: "#64748b", fontSize: "14px", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: "4px" }}>← 목록으로</button>
-          <button onClick={() => setShowDeleteConfirm(true)} style={{ background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 14px", fontSize: "13px", color: "#991b1b", cursor: "pointer", fontWeight: 600 }}>삭제</button>
+          {userRole === "admin" && <button onClick={() => setShowDeleteConfirm(true)} style={{ background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 14px", fontSize: "13px", color: "#991b1b", cursor: "pointer", fontWeight: 600 }}>삭제</button>}
         </div>
 
         {/* 삭제 확인 팝업 */}
@@ -1601,7 +1601,7 @@ export default function App() {
           <>
             {view === "dashboard" && <Dashboard clients={clients} onNavigate={navigate} />}
             {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} />}
-            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} />}
+            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} userRole={userRole} />}
             {view === "staff" && userRole === "admin" && <StaffManagement showToast={showToast} />}
           </>
         )}
