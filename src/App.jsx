@@ -1146,7 +1146,7 @@ function StaffManagement({ showToast }) {
   const deleteStaff = async (staffId) => {
     const { error } = await supabase
       .from("profiles")
-      .delete()
+      .update({ is_active: false })
       .eq("id", staffId);
 
     if (error) {
