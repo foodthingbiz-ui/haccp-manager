@@ -364,7 +364,16 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
 
   const handleSaveEdit = async () => {
     setSaving(true);
-    await onUpdate(client.id, editData);
+    const cf = editData.consultType === "정기 사후관리" ? 0 : (Number(editData.consultFee) || 0);
+    const mf = ["신규인증", "단기 사후관리", "연장심사"].includes(editData.consultType) ? 0 : (Number(editData.maintenanceFee) || 0);
+    const autoStatus = (cf > 0 || mf > 0) ? "계약완료" : "상담중";
+    await onUpdate(client.id, {
+      ...editData,
+      type: (editData.bizTypes || []).map(bt => bt.type).filter(Boolean).join(", "),
+      status: autoStatus,
+      consultFee: cf,
+      maintenanceFee: mf,
+    });
     setIsEditing(false);
     setSaving(false);
   };
@@ -451,56 +460,202 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
             )}
           </div>
           {!isEditing ? (
-            <div style={{ display: "grid", gap: "16px" }}>
-              {[["업체명", client.name], ["업종", client.type], ["컨설팅 종류", null], ["담당자", client.contact], ["연락처", client.phone], ["이메일", client.email], ["주소", client.address], ["메모", client.memo], ["등록일", formatDate(client.registeredAt)]].map(([label, value]) => (
-                <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: label === "메모" ? "flex-start" : "center" }}>
-                  <span style={{ fontSize: "13px", color: "#94a3b8", width: "85px", flexShrink: 0, fontWeight: 600, paddingTop: label === "메모" ? "2px" : 0 }}>{label}</span>
-                  {label === "컨설팅 종류" ? (
-                    <ConsultBadge consultType={client.consultType} />
-                  ) : label === "메모" ? (
-                    <span style={{ fontSize: "14px", color: "#1a1a2e", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: "1.6", flex: 1, maxHeight: "67.2px", overflowY: "auto", paddingRight: "4px" }}>{value || "-"}</span>
-                  ) : (
-                    <span style={{ fontSize: "14px", color: "#1a1a2e" }}>{value || "-"}</span>
-                  )}
+            <div style={{ display: "grid", gap: "0" }}>
+              {/* 업체 정보 */}
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "10px 0 6px" }}>업체 정보</div>
+              {[["업체명", client.name], ["사업자등록번호", client.bizNumber], ["주소", client.address], ["인증여부", client.certified ? "인증" : "미인증"], ...(client.certified ? [["인증일자", formatDate(client.certifiedDate)]] : [])].map(([label, value]) => (
+                <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                  <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>{label}</span>
+                  <span style={{ fontSize: "14px", color: label === "인증여부" ? (client.certified ? "#065f46" : "#991b1b") : "#1a1a2e", fontWeight: label === "인증여부" ? 600 : 400 }}>{value || "-"}</span>
                 </div>
               ))}
+              {/* 업종/인허가 정보 */}
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "16px 0 6px" }}>업종 / 인허가 정보</div>
+              {(client.bizTypes || []).length > 0 ? (client.bizTypes || []).map((bt, idx) => (
+                <div key={idx} style={{ background: "#f8fafc", borderRadius: "10px", padding: "12px", marginBottom: "8px" }}>
+                  <div style={{ display: "flex", gap: "12px", marginBottom: bt.categories?.length > 0 ? "8px" : "0" }}>
+                    <div><span style={{ fontSize: "12px", color: "#94a3b8" }}>업종</span> <span style={{ fontSize: "14px", color: "#1a1a2e", fontWeight: 600, marginLeft: "4px" }}>{bt.type || "-"}</span></div>
+                    <div><span style={{ fontSize: "12px", color: "#94a3b8" }}>인허가</span> <span style={{ fontSize: "14px", color: "#1a1a2e", marginLeft: "4px" }}>{bt.license || "-"}</span></div>
+                  </div>
+                  {bt.categories?.length > 0 && (
+                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                      {bt.categories.map((cat, ci) => (
+                        <span key={ci} style={{ fontSize: "12px", padding: "2px 10px", borderRadius: "6px", background: "#dbeafe", color: "#1e40af" }}>{cat}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )) : <div style={{ padding: "8px 0", fontSize: "13px", color: "#94a3b8" }}>등록된 업종이 없습니다.</div>}
+              {/* 대표자 정보 */}
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "16px 0 6px" }}>대표자 정보</div>
+              {[["대표자명", client.ceoName], ["생년월일", client.ceoBirth ? formatDate(client.ceoBirth) : ""], ["대표자 연락처", client.ceoPhone]].map(([label, value]) => (
+                <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                  <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>{label}</span>
+                  <span style={{ fontSize: "14px", color: "#1a1a2e" }}>{value || "-"}</span>
+                </div>
+              ))}
+              {/* 담당자 정보 */}
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "16px 0 6px" }}>담당자 정보</div>
+              {[["담당자", client.contact], ["연락처", client.phone], ["이메일", client.email]].map(([label, value]) => (
+                <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                  <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>{label}</span>
+                  <span style={{ fontSize: "14px", color: "#1a1a2e" }}>{value || "-"}</span>
+                </div>
+              ))}
+              {/* 컨설팅 정보 */}
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "16px 0 6px" }}>컨설팅 정보</div>
+              <div style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>컨설팅 종류</span>
+                <ConsultBadge consultType={client.consultType} />
+              </div>
+              {client.contractDate && (
+                <div style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                  <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>계약일자</span>
+                  <span style={{ fontSize: "14px", color: "#1a1a2e" }}>{formatDate(client.contractDate)}</span>
+                </div>
+              )}
+              {/* 메모 */}
+              <div style={{ display: "flex", gap: "12px", padding: "12px 0", alignItems: "flex-start" }}>
+                <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600, paddingTop: "2px" }}>메모</span>
+                <span style={{ fontSize: "14px", color: "#1a1a2e", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: "1.6", flex: 1, maxHeight: "100px", overflowY: "auto" }}>{client.memo || "-"}</span>
+              </div>
+              <div style={{ display: "flex", gap: "12px", padding: "8px 0", alignItems: "center" }}>
+                <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>등록일</span>
+                <span style={{ fontSize: "14px", color: "#1a1a2e" }}>{formatDate(client.registeredAt)}</span>
+              </div>
             </div>
           ) : (
             <div style={{ display: "grid", gap: "14px" }}>
-              {[["name", "업체명"], ["type", "업종"], ["contact", "담당자"], ["phone", "연락처"], ["email", "이메일"], ["address", "주소"]].map(([key, label]) => (
-                <div key={key}>
-                  <label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>{label}</label>
-                  <input value={editData[key] || ""} onChange={e => setEditData({ ...editData, [key]: e.target.value })} style={inputStyle} onFocus={e => e.target.style.borderColor = "#1a1a2e"} onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
-                </div>
-              ))}
-              <div>
-                <label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>컨설팅 종류</label>
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                  {Object.entries(CONSULT_TYPES).map(([ct, cfg]) => (
-                    <button key={ct} type="button" onClick={() => setEditData({ ...editData, consultType: ct })} style={{ padding: "8px 14px", borderRadius: "10px", border: editData.consultType === ct ? `2px solid ${cfg.color}` : "1px solid #e2e8f0", background: editData.consultType === ct ? cfg.bg : "white", color: editData.consultType === ct ? cfg.color : "#64748b", fontSize: "13px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}>
-                      {cfg.icon} {ct}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>진행 상태</label>
-                <select value={editData.status} onChange={e => setEditData({ ...editData, status: e.target.value })} style={{ ...inputStyle, appearance: "auto" }}>
-                  {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
+              {/* 업체 정보 */}
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e" }}>업체 정보</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                 <div>
-                  <label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>컨설팅 비용 (원)</label>
-                  <input type="number" value={editData.consultFee || 0} onChange={e => setEditData({ ...editData, consultFee: Number(e.target.value) || 0 })} style={inputStyle} />
+                  <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>업체명</label>
+                  <input value={editData.name || ""} onChange={e => setEditData({ ...editData, name: e.target.value })} style={inputStyle} />
                 </div>
                 <div>
-                  <label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>사후관리 비용 (원)</label>
-                  <input type="number" value={editData.maintenanceFee || 0} onChange={e => setEditData({ ...editData, maintenanceFee: Number(e.target.value) || 0 })} style={inputStyle} />
+                  <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>사업자등록번호</label>
+                  <input value={editData.bizNumber || ""} onChange={e => setEditData({ ...editData, bizNumber: e.target.value })} style={inputStyle} placeholder="000-00-00000" />
                 </div>
               </div>
               <div>
-                <label style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>주소</label>
+                <input value={editData.address || ""} onChange={e => setEditData({ ...editData, address: e.target.value })} style={inputStyle} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: (editData.certified) ? "1fr 1fr" : "1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>인증여부</label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    {[["인증", true], ["미인증", false]].map(([label, val]) => (
+                      <button key={label} type="button" onClick={() => setEditData({ ...editData, certified: val, certifiedDate: val ? editData.certifiedDate : "" })} style={{ flex: 1, padding: "8px", borderRadius: "10px", border: editData.certified === val ? "2px solid #1a1a2e" : "1px solid #e2e8f0", background: editData.certified === val ? (val ? "#d1fae5" : "#f1f5f9") : "white", color: editData.certified === val ? (val ? "#065f46" : "#64748b") : "#64748b", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+                {editData.certified && (
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>인증일자</label>
+                    <input type="date" value={editData.certifiedDate || ""} onChange={e => setEditData({ ...editData, certifiedDate: e.target.value })} style={inputStyle} />
+                  </div>
+                )}
+              </div>
+
+              {/* 업종/인허가 */}
+              <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e" }}>업종 / 인허가 정보</span>
+                </div>
+                {(editData.bizTypes || [{ type: editData.type || "", license: "", categories: [] }]).map((bt, idx) => (
+                  <div key={idx} style={{ background: "#f8fafc", borderRadius: "10px", padding: "12px", marginBottom: "8px", border: "1px solid #e2e8f0" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                        <input value={bt.type} onChange={e => { const u = [...(editData.bizTypes || [])]; u[idx] = { ...u[idx], type: e.target.value }; setEditData({ ...editData, bizTypes: u }); }} style={{ ...inputStyle, fontSize: "13px" }} placeholder="업종" />
+                        <input value={bt.license} onChange={e => { const u = [...(editData.bizTypes || [])]; u[idx] = { ...u[idx], license: e.target.value }; setEditData({ ...editData, bizTypes: u }); }} style={{ ...inputStyle, fontSize: "13px" }} placeholder="인허가번호" />
+                      </div>
+                      {(editData.bizTypes || []).length > 1 && (
+                        <button type="button" onClick={() => setEditData({ ...editData, bizTypes: editData.bizTypes.filter((_, i) => i !== idx) })} style={{ width: "28px", height: "28px", borderRadius: "8px", background: "#fee2e2", border: "none", color: "#991b1b", fontSize: "14px", cursor: "pointer", flexShrink: 0 }}>x</button>
+                      )}
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600, display: "block", marginBottom: "4px" }}>유형 (엔터로 추가)</label>
+                      <TagInput tags={bt.categories || []} onChange={val => { const u = [...(editData.bizTypes || [])]; u[idx] = { ...u[idx], categories: val }; setEditData({ ...editData, bizTypes: u }); }} placeholder="유형 입력 후 엔터" />
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setEditData({ ...editData, bizTypes: [...(editData.bizTypes || []), { type: "", license: "", categories: [] }] })} style={{ width: "100%", padding: "8px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", color: "#64748b", cursor: "pointer" }}>+ 업종/인허가 추가</button>
+              </div>
+
+              {/* 대표자 정보 */}
+              <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", marginBottom: "10px" }}>대표자 정보</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>대표자명</label>
+                    <input value={editData.ceoName || ""} onChange={e => setEditData({ ...editData, ceoName: e.target.value })} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>생년월일</label>
+                    <input type="date" value={editData.ceoBirth || ""} onChange={e => setEditData({ ...editData, ceoBirth: e.target.value })} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>대표자 연락처</label>
+                    <input value={editData.ceoPhone || ""} onChange={e => setEditData({ ...editData, ceoPhone: e.target.value })} style={inputStyle} />
+                  </div>
+                </div>
+              </div>
+
+              {/* 담당자 정보 */}
+              <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", marginBottom: "10px" }}>담당자 정보</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>담당자</label>
+                    <input value={editData.contact || ""} onChange={e => setEditData({ ...editData, contact: e.target.value })} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>연락처</label>
+                    <input value={editData.phone || ""} onChange={e => setEditData({ ...editData, phone: e.target.value })} style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ marginTop: "12px" }}>
+                  <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>이메일</label>
+                  <input value={editData.email || ""} onChange={e => setEditData({ ...editData, email: e.target.value })} style={inputStyle} />
+                </div>
+              </div>
+
+              {/* 컨설팅 정보 */}
+              <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", marginBottom: "10px" }}>컨설팅 정보</div>
+                <div>
+                  <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>컨설팅 종류</label>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    {Object.entries(CONSULT_TYPES).map(([ct, cfg]) => (
+                      <button key={ct} type="button" onClick={() => setEditData({ ...editData, consultType: ct, consultFee: ct === "정기 사후관리" ? 0 : editData.consultFee, maintenanceFee: ct !== "정기 사후관리" ? 0 : editData.maintenanceFee })} style={{ padding: "6px 10px", borderRadius: "8px", border: editData.consultType === ct ? `2px solid ${cfg.color}` : "1px solid #e2e8f0", background: editData.consultType === ct ? cfg.bg : "white", color: editData.consultType === ct ? cfg.color : "#64748b", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
+                        {cfg.icon} {ct}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
+                  <div>
+                    <label style={{ fontSize: "12px", color: editData.consultType === "정기 사후관리" ? "#cbd5e1" : "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>컨설팅 비용 (원)</label>
+                    <input type="number" value={editData.consultFee || 0} onChange={e => setEditData({ ...editData, consultFee: Number(e.target.value) || 0 })} disabled={editData.consultType === "정기 사후관리"} style={{ ...inputStyle, background: editData.consultType === "정기 사후관리" ? "#f8fafc" : "white" }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "12px", color: ["신규인증", "단기 사후관리", "연장심사"].includes(editData.consultType) ? "#cbd5e1" : "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>사후관리 비용 (원)</label>
+                    <input type="number" value={editData.maintenanceFee || 0} onChange={e => setEditData({ ...editData, maintenanceFee: Number(e.target.value) || 0 })} disabled={["신규인증", "단기 사후관리", "연장심사"].includes(editData.consultType)} style={{ ...inputStyle, background: ["신규인증", "단기 사후관리", "연장심사"].includes(editData.consultType) ? "#f8fafc" : "white" }} />
+                  </div>
+                </div>
+                {(editData.consultFee > 0 || editData.maintenanceFee > 0) && (
+                  <div style={{ marginTop: "12px" }}>
+                    <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>계약일자</label>
+                    <input type="date" value={editData.contractDate || ""} onChange={e => setEditData({ ...editData, contractDate: e.target.value })} style={inputStyle} />
+                  </div>
+                )}
+              </div>
+
+              {/* 메모 */}
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
                 <textarea value={editData.memo || ""} onChange={e => setEditData({ ...editData, memo: e.target.value })} rows={5} style={{ ...inputStyle, resize: "vertical" }} placeholder="엔터를 눌러 줄을 바꿀 수 있습니다" />
               </div>
             </div>
