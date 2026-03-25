@@ -1263,6 +1263,49 @@ function HaccpManagement({ clientId }) {
                                 </div>
                               )}
                             </div>
+                            {/* 갱신 일자 수정 */}
+                            {cat.key !== "etc_note" && (
+                              <div style={{ background: "#eff6ff", borderRadius: "10px", padding: "14px", border: "1px solid #bfdbfe" }}>
+                                <div style={{ fontSize: "12px", fontWeight: 600, color: "#1e40af", marginBottom: "10px" }}>갱신 일자 설정</div>
+                                <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+                                  {[["direct", "직접 입력"], ["auto", "자동 계산"]].map(([val, label]) => (
+                                    <button key={val} type="button" onClick={() => setEditData({ ...editData, renewalType: val })} style={{ flex: 1, padding: "7px", borderRadius: "8px", border: (editData.renewalType || "direct") === val ? "2px solid #1e40af" : "1px solid #e2e8f0", background: (editData.renewalType || "direct") === val ? "#dbeafe" : "white", color: (editData.renewalType || "direct") === val ? "#1e40af" : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{label}</button>
+                                  ))}
+                                </div>
+                                {(editData.renewalType || "direct") === "direct" && (
+                                  <div>
+                                    <label style={{ fontSize: "11px", color: "#64748b", display: "block", marginBottom: "4px" }}>갱신 일자</label>
+                                    <input type="date" value={editData.renewalDate || ""} onChange={e => setEditData({ ...editData, renewalDate: e.target.value })} style={{ ...inputStyle, fontSize: "13px" }} />
+                                  </div>
+                                )}
+                                {(editData.renewalType || "direct") === "auto" && (
+                                  <div>
+                                    <label style={{ fontSize: "11px", color: "#64748b", display: "block", marginBottom: "6px" }}>기준일({editData.record_date || "미입력"})로부터</label>
+                                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                                      {Object.entries(RENEWAL_PERIODS).map(([key, label]) => (
+                                        <button key={key} type="button" onClick={() => { const rd = calcRenewalDate(editData.record_date, key); setEditData({ ...editData, renewalPeriod: key, renewalDate: rd }); }} style={{ padding: "6px 12px", borderRadius: "8px", border: editData.renewalPeriod === key ? "2px solid #1e40af" : "1px solid #e2e8f0", background: editData.renewalPeriod === key ? "#dbeafe" : "white", color: editData.renewalPeriod === key ? "#1e40af" : "#64748b", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>{label}</button>
+                                      ))}
+                                    </div>
+                                    {editData.renewalDate && (editData.renewalType || "direct") === "auto" && (
+                                      <div style={{ marginTop: "8px", fontSize: "12px", color: "#1e40af", fontWeight: 600 }}>→ 갱신 일자: {formatDate(editData.renewalDate)}</div>
+                                    )}
+                                  </div>
+                                )}
+                                <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid #bfdbfe" }}>
+                                  <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: "#1e40af", marginBottom: editData.alertEnabled ? "8px" : "0" }}>
+                                    <input type="checkbox" checked={editData.alertEnabled || false} onChange={e => setEditData({ ...editData, alertEnabled: e.target.checked })} style={{ width: "16px", height: "16px", cursor: "pointer" }} />
+                                    알림 설정
+                                  </label>
+                                  {editData.alertEnabled && (
+                                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                                      {Object.entries(ALERT_TIMINGS).map(([key, label]) => (
+                                        <button key={key} type="button" onClick={() => setEditData({ ...editData, alertTiming: key })} style={{ padding: "6px 12px", borderRadius: "8px", border: (editData.alertTiming || "") === key ? "2px solid #7c3aed" : "1px solid #e2e8f0", background: (editData.alertTiming || "") === key ? "#ede9fe" : "white", color: (editData.alertTiming || "") === key ? "#7c3aed" : "#64748b", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>{label}</button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                             <div style={{ display: "flex", gap: "8px" }}>
                               <button onClick={cancelEdit} style={{ flex: 1, padding: "9px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
                               <button onClick={saveEdit} disabled={saving} style={{ flex: 1, padding: "9px", border: "none", borderRadius: "10px", background: "#0f766e", color: "white", fontSize: "13px", cursor: "pointer", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "저장 중..." : "수정 완료"}</button>
@@ -1282,6 +1325,16 @@ function HaccpManagement({ clientId }) {
                                       📎 {f.name}
                                     </a>
                                   ))}
+                                </div>
+                              )}
+                              {/* 갱신 정보 표시 */}
+                              {r.renewal_date && (
+                                <div style={{ marginTop: "8px", display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                                  <span style={{ fontSize: "11px", padding: "3px 10px", borderRadius: "6px", background: "#eff6ff", color: "#1e40af", fontWeight: 600 }}>갱신: {formatDate(r.renewal_date)}</span>
+                                  {(() => { const d = calcDday(r.renewal_date); const dc = ddayColor(d); return <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "6px", background: dc.bg, color: dc.color, fontWeight: 700 }}>{formatDday(d)}</span>; })()}
+                                  {r.alert_enabled && r.alert_timing && (
+                                    <span style={{ fontSize: "11px", padding: "3px 10px", borderRadius: "6px", background: "#ede9fe", color: "#7c3aed", fontWeight: 600 }}>알림: {ALERT_TIMINGS[r.alert_timing] || r.alert_timing}</span>
+                                  )}
                                 </div>
                               )}
                             </div>
