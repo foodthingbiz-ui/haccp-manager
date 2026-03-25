@@ -46,6 +46,12 @@ function dbToClient(row, records = []) {
     contractAmount: row.contract_amount || 0,
     consultFee: row.consult_fee || 0,
     maintenanceFee: row.maintenance_fee || 0,
+    ceoName: row.ceo_name || "",
+    ceoBirth: row.ceo_birth || "",
+    ceoPhone: row.ceo_phone || "",
+    bizNumber: row.biz_number || "",
+    bizTypes: (() => { try { return JSON.parse(row.biz_types || "[]"); } catch { return []; } })(),
+    contractDate: row.contract_date || "",
     memo: row.memo || "",
     registeredAt: row.registered_at || "",
     records: records.map(r => ({
@@ -71,6 +77,12 @@ function clientToDb(data) {
   if (data.contractAmount !== undefined) result.contract_amount = data.contractAmount;
   if (data.consultFee !== undefined) result.consult_fee = data.consultFee;
   if (data.maintenanceFee !== undefined) result.maintenance_fee = data.maintenanceFee;
+  if (data.ceoName !== undefined) result.ceo_name = data.ceoName;
+  if (data.ceoBirth !== undefined) result.ceo_birth = data.ceoBirth;
+  if (data.ceoPhone !== undefined) result.ceo_phone = data.ceoPhone;
+  if (data.bizNumber !== undefined) result.biz_number = data.bizNumber;
+  if (data.bizTypes !== undefined) result.biz_types = JSON.stringify(data.bizTypes);
+  if (data.contractDate !== undefined) result.contract_date = data.contractDate || null;
   if (data.memo !== undefined) result.memo = data.memo;
   if (data.registeredAt !== undefined) result.registered_at = data.registeredAt;
   return result;
@@ -989,56 +1001,193 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
   );
 }
 
+// ─── 업종/인허가 유형 태그 입력 컴포넌트 ───
+function TagInput({ tags, onChange, placeholder }) {
+  const [input, setInput] = useState("");
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && input.trim()) {
+      e.preventDefault();
+      if (!tags.includes(input.trim())) onChange([...tags, input.trim()]);
+      setInput("");
+    }
+  };
+  const removeTag = (idx) => onChange(tags.filter((_, i) => i !== idx));
+  return (
+    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+      {tags.map((t, idx) => (
+        <span key={idx} style={{ fontSize: "12px", padding: "3px 10px", borderRadius: "6px", background: "#dbeafe", color: "#1e40af", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+          {t} <span onClick={() => removeTag(idx)} style={{ cursor: "pointer", fontSize: "11px", opacity: 0.7 }}>x</span>
+        </span>
+      ))}
+      <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder} style={{ flex: 1, minWidth: "100px", padding: "4px 8px", border: "1px solid #e2e8f0", borderRadius: "6px", fontSize: "12px", outline: "none", boxSizing: "border-box" }} />
+    </div>
+  );
+}
+
 // ─── 거래처 추가 모달 ───
 function AddClientModal({ onClose, onSave, saving }) {
-  const [form, setForm] = useState({ name: "", contact: "", phone: "", email: "", address: "", type: "", consultType: "신규인증", status: "상담중", consultFee: 0, maintenanceFee: 0, memo: "" });
+  const [form, setForm] = useState({
+    name: "", bizNumber: "", address: "",
+    bizTypes: [{ type: "", license: "", categories: [] }],
+    ceoName: "", ceoBirth: "", ceoPhone: "",
+    contact: "", phone: "", email: "",
+    consultType: "신규인증", status: "상담중",
+    consultFee: 0, maintenanceFee: 0, contractDate: "",
+    memo: "",
+  });
   const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  const isMaintenanceOnly = form.consultType === "정기 사후관리";
+  const isConsultOnly = ["신규인증", "단기 사후관리", "연장심사"].includes(form.consultType);
+
+  const addBizType = () => setForm({ ...form, bizTypes: [...form.bizTypes, { type: "", license: "", categories: [] }] });
+  const removeBizType = (idx) => setForm({ ...form, bizTypes: form.bizTypes.filter((_, i) => i !== idx) });
+  const updateBizType = (idx, field, value) => {
+    const updated = form.bizTypes.map((bt, i) => i === idx ? { ...bt, [field]: value } : bt);
+    setForm({ ...form, bizTypes: updated });
+  };
 
   const handleSave = () => {
     if (!form.name.trim()) return alert("업체명을 입력해주세요.");
-    onSave({ ...form, consultFee: Number(form.consultFee) || 0, maintenanceFee: Number(form.maintenanceFee) || 0 });
+    onSave({
+      ...form,
+      type: form.bizTypes.map(bt => bt.type).filter(Boolean).join(", "),
+      consultFee: isMaintenanceOnly ? 0 : (Number(form.consultFee) || 0),
+      maintenanceFee: isConsultOnly ? 0 : (Number(form.maintenanceFee) || 0),
+    });
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px", backdropFilter: "blur(4px)" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: "20px", padding: "28px", width: "100%", maxWidth: "460px", maxHeight: "85vh", overflow: "auto" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: "20px", padding: "28px", width: "100%", maxWidth: "500px", maxHeight: "85vh", overflow: "auto" }}>
         <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 20px 0" }}>새 거래처 추가</h3>
         <div style={{ display: "grid", gap: "14px" }}>
-          {[["name", "업체명 *"], ["type", "업종 (예: 식품제조, 수산유통)"], ["contact", "담당자"], ["phone", "연락처"], ["email", "이메일"], ["address", "주소"]].map(([key, label]) => (
-            <div key={key}>
-              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>{label}</label>
-              <input value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} style={inputStyle} placeholder={label.replace(" *", "")} onFocus={e => e.target.style.borderColor = "#1a1a2e"} onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
-            </div>
-          ))}
-          <div>
-            <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>컨설팅 종류</label>
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              {Object.entries(CONSULT_TYPES).map(([ct, cfg]) => (
-                <button key={ct} type="button" onClick={() => setForm({ ...form, consultType: ct })} style={{ padding: "8px 14px", borderRadius: "10px", border: form.consultType === ct ? `2px solid ${cfg.color}` : "1px solid #e2e8f0", background: form.consultType === ct ? cfg.bg : "white", color: form.consultType === ct ? cfg.color : "#64748b", fontSize: "13px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}>
-                  {cfg.icon} {ct}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>진행 상태</label>
-            <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, appearance: "auto" }}>
-              {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
+
+          {/* ── 업체 정보 ── */}
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e" }}>업체 정보</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
-              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>컨설팅 비용 (원)</label>
-              <input type="number" value={form.consultFee} onChange={e => setForm({ ...form, consultFee: e.target.value })} style={inputStyle} placeholder="0" />
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>업체명 *</label>
+              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inputStyle} placeholder="업체명" />
             </div>
             <div>
-              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>사후관리 비용 (원)</label>
-              <input type="number" value={form.maintenanceFee} onChange={e => setForm({ ...form, maintenanceFee: e.target.value })} style={inputStyle} placeholder="0" />
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>사업자등록번호</label>
+              <input value={form.bizNumber} onChange={e => setForm({ ...form, bizNumber: e.target.value })} style={inputStyle} placeholder="000-00-00000" />
             </div>
           </div>
           <div>
+            <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>주소</label>
+            <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} style={inputStyle} placeholder="업체 주소" />
+          </div>
+
+          {/* ── 업종/인허가 정보 ── */}
+          <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e" }}>업종 / 인허가 정보</span>
+              <span style={{ fontSize: "11px", color: "#94a3b8" }}>업종별 세트로 관리</span>
+            </div>
+            {form.bizTypes.map((bt, idx) => (
+              <div key={idx} style={{ background: "#f8fafc", borderRadius: "10px", padding: "12px", marginBottom: "8px", border: "1px solid #e2e8f0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                  <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                    <input value={bt.type} onChange={e => updateBizType(idx, "type", e.target.value)} style={{ ...inputStyle, fontSize: "13px" }} placeholder="업종 (예: 식품제조가공업)" />
+                    <input value={bt.license} onChange={e => updateBizType(idx, "license", e.target.value)} style={{ ...inputStyle, fontSize: "13px" }} placeholder="인허가번호" />
+                  </div>
+                  {form.bizTypes.length > 1 && (
+                    <button type="button" onClick={() => removeBizType(idx)} style={{ width: "28px", height: "28px", borderRadius: "8px", background: "#fee2e2", border: "none", color: "#991b1b", fontSize: "14px", cursor: "pointer", flexShrink: 0 }}>x</button>
+                  )}
+                </div>
+                <div>
+                  <label style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600, display: "block", marginBottom: "4px" }}>유형 (엔터로 추가)</label>
+                  <TagInput tags={bt.categories} onChange={val => updateBizType(idx, "categories", val)} placeholder="유형 입력 후 엔터" />
+                </div>
+              </div>
+            ))}
+            <button type="button" onClick={addBizType} style={{ width: "100%", padding: "8px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", color: "#64748b", cursor: "pointer" }}>+ 업종/인허가 추가</button>
+          </div>
+
+          {/* ── 대표자 정보 ── */}
+          <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", marginBottom: "10px" }}>대표자 정보</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>대표자명</label>
+                <input value={form.ceoName} onChange={e => setForm({ ...form, ceoName: e.target.value })} style={inputStyle} placeholder="대표자명" />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>생년월일</label>
+                <input type="date" value={form.ceoBirth} onChange={e => setForm({ ...form, ceoBirth: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>대표자 연락처</label>
+                <input value={form.ceoPhone} onChange={e => setForm({ ...form, ceoPhone: e.target.value })} style={inputStyle} placeholder="010-0000-0000" />
+              </div>
+            </div>
+          </div>
+
+          {/* ── 담당자 정보 ── */}
+          <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", marginBottom: "10px" }}>담당자 정보</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>담당자</label>
+                <input value={form.contact} onChange={e => setForm({ ...form, contact: e.target.value })} style={inputStyle} placeholder="담당자명" />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>연락처</label>
+                <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} style={inputStyle} placeholder="010-0000-0000" />
+              </div>
+            </div>
+            <div style={{ marginTop: "12px" }}>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>이메일</label>
+              <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={inputStyle} placeholder="email@example.com" />
+            </div>
+          </div>
+
+          {/* ── 컨설팅 정보 ── */}
+          <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "14px" }}>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", marginBottom: "10px" }}>컨설팅 정보</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>컨설팅 종류</label>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {Object.entries(CONSULT_TYPES).map(([ct, cfg]) => (
+                    <button key={ct} type="button" onClick={() => setForm({ ...form, consultType: ct, consultFee: ct === "정기 사후관리" ? 0 : form.consultFee, maintenanceFee: ct !== "정기 사후관리" ? 0 : form.maintenanceFee })} style={{ padding: "6px 10px", borderRadius: "8px", border: form.consultType === ct ? `2px solid ${cfg.color}` : "1px solid #e2e8f0", background: form.consultType === ct ? cfg.bg : "white", color: form.consultType === ct ? cfg.color : "#64748b", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
+                      {cfg.icon} {ct}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>진행 상태</label>
+                <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, appearance: "auto" }}>
+                  {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            {/* 계약일자 - 계약완료 시에만 */}
+            {form.status === "계약완료" && (
+              <div style={{ marginTop: "12px" }}>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>계약일자</label>
+                <input type="date" value={form.contractDate} onChange={e => setForm({ ...form, contractDate: e.target.value })} style={inputStyle} />
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
+              <div>
+                <label style={{ fontSize: "12px", color: isMaintenanceOnly ? "#cbd5e1" : "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>컨설팅 비용 (원)</label>
+                <input type="number" value={form.consultFee} onChange={e => setForm({ ...form, consultFee: e.target.value })} disabled={isMaintenanceOnly} style={{ ...inputStyle, background: isMaintenanceOnly ? "#f8fafc" : "white", color: isMaintenanceOnly ? "#cbd5e1" : "#1a1a2e" }} placeholder="0" />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", color: isConsultOnly ? "#cbd5e1" : "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>사후관리 비용 (원)</label>
+                <input type="number" value={form.maintenanceFee} onChange={e => setForm({ ...form, maintenanceFee: e.target.value })} disabled={isConsultOnly} style={{ ...inputStyle, background: isConsultOnly ? "#f8fafc" : "white", color: isConsultOnly ? "#cbd5e1" : "#1a1a2e" }} placeholder="0" />
+              </div>
+            </div>
+          </div>
+
+          {/* ── 메모 ── */}
+          <div>
             <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
-            <textarea value={form.memo} onChange={e => setForm({ ...form, memo: e.target.value })} rows={3} style={{ ...inputStyle, resize: "vertical" }} placeholder="추가 정보...&#10;엔터를 눌러 줄을 바꿀 수 있습니다" />
+            <textarea value={form.memo} onChange={e => setForm({ ...form, memo: e.target.value })} rows={3} style={{ ...inputStyle, resize: "vertical" }} placeholder="추가 정보..." />
           </div>
         </div>
         <div style={{ display: "flex", gap: "10px", marginTop: "24px" }}>
