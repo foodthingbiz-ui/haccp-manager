@@ -1008,7 +1008,9 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
 // ─── 업종/인허가 유형 태그 입력 컴포넌트 ───
 function TagInput({ tags, onChange, placeholder }) {
   const [input, setInput] = useState("");
+  const [isComposing, setIsComposing] = useState(false);
   const handleKeyDown = (e) => {
+    if (isComposing) return;
     if (e.key === "Enter" && input.trim()) {
       e.preventDefault();
       if (!tags.includes(input.trim())) onChange([...tags, input.trim()]);
@@ -1023,7 +1025,7 @@ function TagInput({ tags, onChange, placeholder }) {
           {t} <span onClick={() => removeTag(idx)} style={{ cursor: "pointer", fontSize: "11px", opacity: 0.7 }}>x</span>
         </span>
       ))}
-      <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder} style={{ flex: 1, minWidth: "100px", padding: "4px 8px", border: "1px solid #e2e8f0", borderRadius: "6px", fontSize: "12px", outline: "none", boxSizing: "border-box" }} />
+      <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} onCompositionStart={() => setIsComposing(true)} onCompositionEnd={() => setIsComposing(false)} placeholder={placeholder} style={{ flex: 1, minWidth: "100px", padding: "4px 8px", border: "1px solid #e2e8f0", borderRadius: "6px", fontSize: "12px", outline: "none", boxSizing: "border-box" }} />
     </div>
   );
 }
