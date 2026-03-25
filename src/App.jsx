@@ -24,6 +24,39 @@ const CONSULT_TYPES = {
 
 const RECORD_TYPES = { "방문": "🏢", "상담": "💬", "전화": "📞" };
 
+const RENEWAL_PERIODS = { "1m": "1개월 후", "3m": "3개월 후", "6m": "6개월 후", "1y": "1년 후" };
+const ALERT_TIMINGS = { "1d": "1일 전", "1w": "1주일 전", "15d": "15일 전", "1m": "1개월 전" };
+
+// 갱신일자 자동 계산 (윤달/월별 일수 처리)
+function calcRenewalDate(baseDate, period) {
+  if (!baseDate || !period) return "";
+  const d = new Date(baseDate);
+  if (isNaN(d.getTime())) return "";
+  switch (period) {
+    case "1m": d.setMonth(d.getMonth() + 1); break;
+    case "3m": d.setMonth(d.getMonth() + 3); break;
+    case "6m": d.setMonth(d.getMonth() + 6); break;
+    case "1y": d.setFullYear(d.getFullYear() + 1); break;
+    default: return "";
+  }
+  return d.toISOString().split("T")[0];
+}
+
+// 알림 기준일 계산
+function calcAlertDate(renewalDate, timing) {
+  if (!renewalDate || !timing) return null;
+  const d = new Date(renewalDate);
+  if (isNaN(d.getTime())) return null;
+  switch (timing) {
+    case "1d": d.setDate(d.getDate() - 1); break;
+    case "1w": d.setDate(d.getDate() - 7); break;
+    case "15d": d.setDate(d.getDate() - 15); break;
+    case "1m": d.setMonth(d.getMonth() - 1); break;
+    default: return null;
+  }
+  return d.toISOString().split("T")[0];
+}
+
 const formatMoney = (n) => n ? n.toLocaleString("ko-KR") + "원" : "-";
 const formatDate = (d) => {
   if (!d) return "-";
@@ -144,6 +177,43 @@ function ConsultBadge({ consultType, size = "md" }) {
 function Dashboard({ clients, onNavigate }) {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState("전체");
+  const [alerts, setAlerts] = useState([]);
+
+  // 갱신 알림 데이터 로딩
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      const { data } = await supabase
+        .from("haccp_records")
+        .select("*, clients!inner(name)")
+        .eq("alert_enabled", true)
+        .not("renewal_date", "is", null)
+        .order("renewal_date", { ascending: true });
+
+      if (!data) return;
+      const today = new Date().toISOString().split("T")[0];
+      const alertItems = [];
+      const catLabels = {};
+      HACCP_CATEGORIES.forEach(c => { catLabels[c.key] = c.label; });
+
+      data.forEach(r => {
+        const alertDate = calcAlertDate(r.renewal_date, r.alert_timing);
+        if (alertDate && alertDate <= today && r.renewal_date >= today) {
+          alertItems.push({
+            id: r.id,
+            clientId: r.client_id,
+            clientName: r.clients?.name || "",
+            category: catLabels[r.category] || r.category,
+            itemName: r.item_name || "",
+            renewalDate: r.renewal_date,
+            alertTiming: ALERT_TIMINGS[r.alert_timing] || r.alert_timing,
+            daysLeft: Math.ceil((new Date(r.renewal_date) - new Date(today)) / (1000 * 60 * 60 * 24)),
+          });
+        }
+      });
+      setAlerts(alertItems);
+    };
+    fetchAlerts();
+  }, []);
 
   // 거래처 등록일에서 연도 목록 추출
   const years = useMemo(() => {
@@ -188,6 +258,29 @@ function Dashboard({ clients, onNavigate }) {
           ))}
         </div>
       </div>
+      {/* 갱신 알림 */}
+      {alerts.length > 0 && (
+        <div style={{ background: "#fef2f2", borderRadius: "16px", border: "1px solid #fecaca", padding: "20px", marginBottom: "20px" }}>
+          <h3 style={{ fontSize: "15px", fontWeight: 700, color: "#991b1b", margin: "0 0 14px 0", display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "16px" }}>&#9888;</span> 갱신 알림 ({alerts.length}건)
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: alerts.length > 4 ? "260px" : "auto", overflowY: alerts.length > 4 ? "auto" : "visible" }}>
+            {alerts.map(a => (
+              <div key={a.id} onClick={() => onNavigate("detail", a.clientId)} style={{ background: "white", borderRadius: "12px", padding: "12px 16px", cursor: "pointer", border: "1px solid #fecaca", display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: a.daysLeft <= 3 ? "#fee2e2" : a.daysLeft <= 7 ? "#fef3c7" : "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700, color: a.daysLeft <= 3 ? "#991b1b" : a.daysLeft <= 7 ? "#92400e" : "#1e40af", flexShrink: 0 }}>D-{a.daysLeft}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>{a.clientName}</div>
+                  <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>{a.category}{a.itemName ? ` - ${a.itemName}` : ""}</div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontSize: "12px", color: "#991b1b", fontWeight: 600 }}>{formatDate(a.renewalDate)}</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>{a.alertTiming} 알림</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "14px", marginBottom: "20px" }}>
         <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)", borderRadius: "16px", padding: "22px", color: "white" }}>
           <div style={{ fontSize: "13px", opacity: 0.7, marginBottom: "8px" }}>전체 거래처</div>
@@ -827,7 +920,7 @@ function HaccpManagement({ clientId }) {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // ── 기록 추가 ──
-  const addRecord = async (category, itemName, recordDate, memo, files) => {
+  const addRecord = async (category, itemName, recordDate, memo, files, renewalData) => {
     setSaving(true);
     let fileUrl = "";
     let fileName = "";
@@ -854,9 +947,20 @@ function HaccpManagement({ clientId }) {
       }
     }
 
+    const insertData = {
+      client_id: clientId, category, item_name: itemName,
+      record_date: recordDate || null, memo,
+      file_url: fileUrl, file_name: fileName,
+      renewal_date: renewalData?.renewalDate || null,
+      renewal_type: renewalData?.renewalType || "",
+      renewal_period: renewalData?.renewalPeriod || "",
+      alert_enabled: renewalData?.alertEnabled || false,
+      alert_timing: renewalData?.alertTiming || "",
+    };
+
     const { data, error } = await supabase
       .from("haccp_records")
-      .insert([{ client_id: clientId, category, item_name: itemName, record_date: recordDate || null, memo, file_url: fileUrl, file_name: fileName }])
+      .insert([insertData])
       .select()
       .single();
 
@@ -887,13 +991,18 @@ function HaccpManagement({ clientId }) {
       record_date: r.record_date || "",
       memo: r.memo || "",
       files: parseFiles(r.file_url, r.file_name),
+      renewalType: r.renewal_type || "direct",
+      renewalDate: r.renewal_date || "",
+      renewalPeriod: r.renewal_period || "",
+      alertEnabled: r.alert_enabled || false,
+      alertTiming: r.alert_timing || "",
     });
     setEditNewFiles([]);
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setEditData({ item_name: "", record_date: "", memo: "", files: [] });
+    setEditData({ item_name: "", record_date: "", memo: "", files: [], renewalType: "direct", renewalDate: "", renewalPeriod: "", alertEnabled: false, alertTiming: "" });
     setEditNewFiles([]);
   };
 
@@ -925,7 +1034,15 @@ function HaccpManagement({ clientId }) {
 
     const { data, error } = await supabase
       .from("haccp_records")
-      .update({ item_name: editData.item_name, record_date: editData.record_date || null, memo: editData.memo, file_url: fileUrl, file_name: fileName })
+      .update({
+        item_name: editData.item_name, record_date: editData.record_date || null,
+        memo: editData.memo, file_url: fileUrl, file_name: fileName,
+        renewal_date: editData.renewalDate || null,
+        renewal_type: editData.renewalType || "",
+        renewal_period: editData.renewalPeriod || "",
+        alert_enabled: editData.alertEnabled || false,
+        alert_timing: editData.alertTiming || "",
+      })
       .eq("id", editingId)
       .select()
       .single();
@@ -934,7 +1051,7 @@ function HaccpManagement({ clientId }) {
       setRecords(prev => prev.map(r => r.id === editingId ? { ...r, ...data } : r));
     }
     setEditingId(null);
-    setEditData({ item_name: "", record_date: "", memo: "", files: [] });
+    setEditData({ item_name: "", record_date: "", memo: "", files: [], renewalType: "direct", renewalDate: "", renewalPeriod: "", alertEnabled: false, alertTiming: "" });
     setEditNewFiles([]);
     setSaving(false);
   };
@@ -1097,6 +1214,11 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
   const [recordDate, setRecordDate] = useState(new Date().toISOString().split("T")[0]);
   const [memo, setMemo] = useState("");
   const [files, setFiles] = useState([]);
+  const [renewalType, setRenewalType] = useState("direct");
+  const [renewalDate, setRenewalDate] = useState("");
+  const [renewalPeriod, setRenewalPeriod] = useState("");
+  const [alertEnabled, setAlertEnabled] = useState(false);
+  const [alertTiming, setAlertTiming] = useState("1w");
 
   const needsItemName = ["validity_evaluation", "external_calibration", "internal_calibration", "etc_note"].includes(category);
   const isEtcNote = category === "etc_note";
@@ -1105,15 +1227,20 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
     category === "internal_calibration" ? "계측기기명" :
     category === "etc_note" ? "제목" : "";
 
+  // 자동 계산 시 갱신일자 업데이트
+  const autoRenewalDate = renewalType === "auto" && recordDate && renewalPeriod ? calcRenewalDate(recordDate, renewalPeriod) : "";
+  const finalRenewalDate = renewalType === "direct" ? renewalDate : autoRenewalDate;
+
   const handleSubmit = async () => {
     if (needsItemName && !itemName.trim()) return alert(isEtcNote ? "제목을 입력해주세요." : "항목명을 입력해주세요.");
     if (isEtcNote && !memo.trim()) return alert("내용을 입력해주세요.");
-    const success = await onAdd(category, itemName, isEtcNote ? null : recordDate, memo, files.length > 0 ? files : null);
+    const renewalData = !isEtcNote ? { renewalType, renewalDate: finalRenewalDate, renewalPeriod: renewalType === "auto" ? renewalPeriod : "", alertEnabled, alertTiming: alertEnabled ? alertTiming : "" } : {};
+    const success = await onAdd(category, itemName, isEtcNote ? null : recordDate, memo, files.length > 0 ? files : null, renewalData);
     if (success) {
-      setItemName("");
-      setRecordDate(new Date().toISOString().split("T")[0]);
-      setMemo("");
-      setFiles([]);
+      setItemName(""); setRecordDate(new Date().toISOString().split("T")[0]);
+      setMemo(""); setFiles([]);
+      setRenewalType("direct"); setRenewalDate(""); setRenewalPeriod("");
+      setAlertEnabled(false); setAlertTiming("1w");
     }
   };
 
@@ -1138,6 +1265,54 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
           <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>{isEtcNote ? "내용" : "메모"}</label>
           <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={isEtcNote ? 5 : 2} style={{ ...inputStyle, resize: "vertical" }} placeholder={isEtcNote ? "내용을 입력하세요..." : "메모 입력 (선택)"} />
         </div>
+
+        {/* 갱신 일자 설정 (기타내용 제외) */}
+        {!isEtcNote && (
+          <div style={{ background: "#eff6ff", borderRadius: "10px", padding: "14px", border: "1px solid #bfdbfe" }}>
+            <div style={{ fontSize: "12px", fontWeight: 600, color: "#1e40af", marginBottom: "10px" }}>갱신 일자 설정</div>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+              {[["direct", "직접 입력"], ["auto", "자동 계산"]].map(([val, label]) => (
+                <button key={val} type="button" onClick={() => setRenewalType(val)} style={{ flex: 1, padding: "7px", borderRadius: "8px", border: renewalType === val ? "2px solid #1e40af" : "1px solid #e2e8f0", background: renewalType === val ? "#dbeafe" : "white", color: renewalType === val ? "#1e40af" : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{label}</button>
+              ))}
+            </div>
+            {renewalType === "direct" && (
+              <div>
+                <label style={{ fontSize: "11px", color: "#64748b", display: "block", marginBottom: "4px" }}>갱신 일자</label>
+                <input type="date" value={renewalDate} onChange={e => setRenewalDate(e.target.value)} style={{ ...inputStyle, fontSize: "13px" }} />
+              </div>
+            )}
+            {renewalType === "auto" && (
+              <div>
+                <label style={{ fontSize: "11px", color: "#64748b", display: "block", marginBottom: "6px" }}>기준일({recordDate || "미입력"})로부터</label>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {Object.entries(RENEWAL_PERIODS).map(([key, label]) => (
+                    <button key={key} type="button" onClick={() => setRenewalPeriod(key)} style={{ padding: "6px 12px", borderRadius: "8px", border: renewalPeriod === key ? "2px solid #1e40af" : "1px solid #e2e8f0", background: renewalPeriod === key ? "#dbeafe" : "white", color: renewalPeriod === key ? "#1e40af" : "#64748b", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>{label}</button>
+                  ))}
+                </div>
+                {autoRenewalDate && (
+                  <div style={{ marginTop: "8px", fontSize: "12px", color: "#1e40af", fontWeight: 600 }}>→ 갱신 일자: {formatDate(autoRenewalDate)}</div>
+                )}
+              </div>
+            )}
+            {/* 알림 설정 */}
+            <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid #bfdbfe" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: alertEnabled ? "8px" : "0" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: "#1e40af" }}>
+                  <input type="checkbox" checked={alertEnabled} onChange={e => setAlertEnabled(e.target.checked)} style={{ width: "16px", height: "16px", cursor: "pointer" }} />
+                  알림 설정
+                </label>
+              </div>
+              {alertEnabled && (
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {Object.entries(ALERT_TIMINGS).map(([key, label]) => (
+                    <button key={key} type="button" onClick={() => setAlertTiming(key)} style={{ padding: "6px 12px", borderRadius: "8px", border: alertTiming === key ? "2px solid #7c3aed" : "1px solid #e2e8f0", background: alertTiming === key ? "#ede9fe" : "white", color: alertTiming === key ? "#7c3aed" : "#64748b", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>{label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div>
           <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>파일 첨부 (여러 개 가능)</label>
           <input type="file" accept="image/*,.pdf" multiple onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} style={{ fontSize: "13px", color: "#64748b" }} />
