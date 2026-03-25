@@ -1042,6 +1042,200 @@ function AddClientModal({ onClose, onSave, saving }) {
   );
 }
 
+// ─── 직원 관리 컴포넌트 (admin 전용) ───
+function StaffManagement({ showToast }) {
+  const [staffList, setStaffList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newStaff, setNewStaff] = useState({ email: "", password: "", name: "", role: "staff" });
+  const [saving, setSaving] = useState(false);
+
+  const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+
+  // ── 직원 목록 불러오기 ──
+  const fetchStaff = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (!error) setStaffList(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchStaff(); }, [fetchStaff]);
+
+  // ── 직원 추가 ──
+  const handleAddStaff = async () => {
+    if (!newStaff.email || !newStaff.password) return alert("이메일과 비밀번호를 입력해주세요.");
+    if (newStaff.password.length < 6) return alert("비밀번호는 6자 이상이어야 합니다.");
+    setSaving(true);
+
+    // Supabase Auth로 회원가입
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: newStaff.email,
+      password: newStaff.password,
+    });
+
+    if (authError) {
+      console.error("직원 추가 실패:", authError);
+      showToast("직원 추가 실패: " + authError.message, "error");
+      setSaving(false);
+      return;
+    }
+
+    // profiles에 직접 INSERT (handle_new_user 트리거가 없으므로)
+    if (authData.user) {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .insert([{
+          id: authData.user.id,
+          email: newStaff.email,
+          name: newStaff.name || newStaff.email.split("@")[0],
+          role: newStaff.role,
+          is_active: true,
+        }]);
+
+      if (profileError) {
+        console.error("프로필 생성 실패:", profileError);
+      }
+    }
+
+    showToast(`"${newStaff.email}" 직원이 추가되었습니다.`);
+    setNewStaff({ email: "", password: "", name: "", role: "staff" });
+    setShowAddForm(false);
+    setSaving(false);
+    fetchStaff();
+  };
+
+  // ── 활성화/비활성화 토글 ──
+  const toggleActive = async (staffId, currentActive) => {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ is_active: !currentActive })
+      .eq("id", staffId);
+
+    if (error) {
+      showToast("상태 변경에 실패했습니다.", "error");
+      return;
+    }
+
+    setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, is_active: !currentActive } : s));
+    showToast(!currentActive ? "직원이 활성화되었습니다." : "직원이 비활성화되었습니다.");
+  };
+
+  // ── 역할 변경 ──
+  const changeRole = async (staffId, newRole) => {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ role: newRole })
+      .eq("id", staffId);
+
+    if (error) {
+      showToast("역할 변경에 실패했습니다.", "error");
+      return;
+    }
+
+    setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, role: newRole } : s));
+    showToast("역할이 변경되었습니다.");
+  };
+
+  if (loading) return <LoadingSpinner message="직원 목록 로딩 중..." />;
+
+  const activeStaff = staffList.filter(s => s.is_active !== false);
+  const inactiveStaff = staffList.filter(s => s.is_active === false);
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
+        <div>
+          <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>직원 관리</h2>
+          <p style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>총 {activeStaff.length}명 활동 중</p>
+        </div>
+        <button onClick={() => setShowAddForm(!showAddForm)} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "12px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
+          {showAddForm ? "취소" : "+ 직원 추가"}
+        </button>
+      </div>
+
+      {/* 직원 추가 폼 */}
+      {showAddForm && (
+        <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
+          <div style={{ display: "grid", gap: "12px" }}>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>이름</label>
+              <input value={newStaff.name} onChange={e => setNewStaff({ ...newStaff, name: e.target.value })} style={inputStyle} placeholder="직원 이름" />
+            </div>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>이메일 *</label>
+              <input type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} style={inputStyle} placeholder="이메일 주소" />
+            </div>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>비밀번호 * (6자 이상)</label>
+              <input type="password" value={newStaff.password} onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} style={inputStyle} placeholder="초기 비밀번호" />
+            </div>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>역할</label>
+              <div style={{ display: "flex", gap: "8px" }}>
+                {[["admin", "관리자"], ["staff", "일반 직원"]].map(([val, label]) => (
+                  <button key={val} onClick={() => setNewStaff({ ...newStaff, role: val })} style={{ padding: "8px 18px", borderRadius: "10px", border: newStaff.role === val ? "2px solid #1a1a2e" : "1px solid #e2e8f0", background: newStaff.role === val ? "#1a1a2e" : "white", color: newStaff.role === val ? "white" : "#64748b", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <button onClick={handleAddStaff} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", width: "100%", opacity: saving ? 0.6 : 1 }}>{saving ? "추가 중..." : "직원 추가"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* 활성 직원 목록 */}
+      <div style={{ marginBottom: "24px" }}>
+        <h3 style={{ fontSize: "15px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 12px 0" }}>활성 직원</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {activeStaff.map(s => (
+            <div key={s.id} style={{ background: "white", borderRadius: "14px", border: "1px solid #e8ecf2", padding: "16px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: s.role === "admin" ? "linear-gradient(135deg, #7c3aed, #a78bfa)" : "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "14px", flexShrink: 0 }}>{(s.name || s.email)[0].toUpperCase()}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>{s.name || "이름 없음"}</div>
+                  <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "2px" }}>{s.email}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                  <select value={s.role || "staff"} onChange={e => changeRole(s.id, e.target.value)} style={{ padding: "4px 8px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "12px", color: "#64748b", background: "white", cursor: "pointer" }}>
+                    <option value="admin">관리자</option>
+                    <option value="staff">일반</option>
+                  </select>
+                  <button onClick={() => toggleActive(s.id, true)} style={{ background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#991b1b", cursor: "pointer", fontWeight: 600 }}>비활성화</button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {activeStaff.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>활성 직원이 없습니다.</p>}
+        </div>
+      </div>
+
+      {/* 비활성 직원 목록 */}
+      {inactiveStaff.length > 0 && (
+        <div>
+          <h3 style={{ fontSize: "15px", fontWeight: 700, color: "#94a3b8", margin: "0 0 12px 0" }}>비활성 직원</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {inactiveStaff.map(s => (
+              <div key={s.id} style={{ background: "#f8fafc", borderRadius: "14px", border: "1px solid #e8ecf2", padding: "16px 20px", opacity: 0.7 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#cbd5e1", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "14px", flexShrink: 0 }}>{(s.name || s.email)[0].toUpperCase()}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>{s.name || "이름 없음"}</div>
+                    <div style={{ fontSize: "12px", color: "#cbd5e1", marginTop: "2px" }}>{s.email}</div>
+                  </div>
+                  <button onClick={() => toggleActive(s.id, false)} style={{ background: "#d1fae5", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#065f46", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>활성화</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── 로그인 화면 ───
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -1095,6 +1289,7 @@ function LoginScreen({ onLogin }) {
 export default function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [userRole, setUserRole] = useState("staff");
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("dashboard");
@@ -1116,6 +1311,28 @@ export default function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ── 로그인한 유저의 role 확인 ──
+  useEffect(() => {
+    if (!session) return;
+    const fetchRole = async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("role, is_active")
+        .eq("id", session.user.id)
+        .single();
+      if (data) {
+        if (!data.is_active) {
+          showToast("비활성화된 계정입니다. 관리자에게 문의하세요.", "error");
+          await supabase.auth.signOut();
+          setSession(null);
+          return;
+        }
+        setUserRole(data.role || "staff");
+      }
+    };
+    fetchRole();
+  }, [session]);
 
   // ── DB에서 거래처 + 상담기록 전부 읽어오기 ──
   const fetchClients = useCallback(async () => {
@@ -1313,6 +1530,7 @@ export default function App() {
   const navItems = [
     { key: "dashboard", label: "대시보드", icon: "📊" },
     { key: "list", label: "거래처", icon: "🏢" },
+    ...(userRole === "admin" ? [{ key: "staff", label: "직원관리", icon: "👥" }] : []),
   ];
 
   return (
@@ -1352,6 +1570,7 @@ export default function App() {
             {view === "dashboard" && <Dashboard clients={clients} onNavigate={navigate} />}
             {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} />}
             {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} />}
+            {view === "staff" && userRole === "admin" && <StaffManagement showToast={showToast} />}
           </>
         )}
       </div>
