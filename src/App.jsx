@@ -1140,6 +1140,25 @@ function StaffManagement({ showToast }) {
     showToast("역할이 변경되었습니다.");
   };
 
+  // ── 직원 삭제 ──
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+
+  const deleteStaff = async (staffId) => {
+    const { error } = await supabase
+      .from("profiles")
+      .delete()
+      .eq("id", staffId);
+
+    if (error) {
+      showToast("직원 삭제에 실패했습니다.", "error");
+      return;
+    }
+
+    setStaffList(prev => prev.filter(s => s.id !== staffId));
+    setDeleteConfirmId(null);
+    showToast("직원이 삭제되었습니다.");
+  };
+
   if (loading) return <LoadingSpinner message="직원 목록 로딩 중..." />;
 
   const activeStaff = staffList.filter(s => s.is_active !== false);
@@ -1225,8 +1244,21 @@ function StaffManagement({ showToast }) {
                     <div style={{ fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>{s.name || "이름 없음"}</div>
                     <div style={{ fontSize: "12px", color: "#cbd5e1", marginTop: "2px" }}>{s.email}</div>
                   </div>
-                  <button onClick={() => toggleActive(s.id, false)} style={{ background: "#d1fae5", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#065f46", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>활성화</button>
+                  <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                    <button onClick={() => toggleActive(s.id, false)} style={{ background: "#d1fae5", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#065f46", cursor: "pointer", fontWeight: 600 }}>활성화</button>
+                    <button onClick={() => setDeleteConfirmId(s.id)} style={{ background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#991b1b", cursor: "pointer", fontWeight: 600 }}>삭제</button>
+                  </div>
                 </div>
+                {deleteConfirmId === s.id && (
+                  <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: "10px", padding: "14px", marginTop: "12px" }}>
+                    <div style={{ fontSize: "13px", color: "#991b1b", fontWeight: 600, marginBottom: "8px" }}>"{s.name || s.email}" 직원을 삭제하시겠습니까?</div>
+                    <div style={{ fontSize: "12px", color: "#b91c1c", marginBottom: "12px" }}>이 작업은 되돌릴 수 없습니다.</div>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button onClick={() => setDeleteConfirmId(null)} style={{ flex: 1, padding: "8px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "white", fontSize: "12px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
+                      <button onClick={() => deleteStaff(s.id)} style={{ flex: 1, padding: "8px", border: "none", borderRadius: "8px", background: "#dc2626", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>삭제하기</button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
