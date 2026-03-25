@@ -1160,14 +1160,35 @@ function StaffManagement({ showToast }) {
     showToast("직원이 삭제되었습니다.");
   };
 
-  // ── 직원 비밀번호 초기화 이메일 발송 ──
-  const resetStaffPassword = async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
-    if (error) {
-      showToast("이메일 발송에 실패했습니다.", "error");
-    } else {
-      showToast(`${email}로 비밀번호 재설정 이메일이 발송되었습니다.`, "info");
+  // ── 직원 비밀번호 초기화 ──
+  const [resetPwId, setResetPwId] = useState(null);
+  const [resetPwValue, setResetPwValue] = useState("");
+
+  const resetStaffPassword = async () => {
+    if (!resetPwValue || resetPwValue.length < 6) return alert("비밀번호는 6자 이상 입력해주세요.");
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ user_id: resetPwId, new_password: resetPwValue }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        showToast("비밀번호가 초기화되었습니다.");
+      } else {
+        showToast(result.error || "비밀번호 초기화에 실패했습니다.", "error");
+      }
+    } catch (err) {
+      showToast("비밀번호 초기화에 실패했습니다.", "error");
     }
+    setResetPwId(null);
+    setResetPwValue("");
+    setSaving(false);
   };
 
   if (loading) return <LoadingSpinner message="직원 목록 로딩 중..." />;
@@ -1233,10 +1254,21 @@ function StaffManagement({ showToast }) {
                     <option value="admin">관리자</option>
                     <option value="staff">일반</option>
                   </select>
-                  <button onClick={() => resetStaffPassword(s.email)} style={{ background: "#dbeafe", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#1e40af", cursor: "pointer", fontWeight: 600 }}>PW초기화</button>
+                  <button onClick={() => { setResetPwId(s.id); setResetPwValue(""); }} style={{ background: "#dbeafe", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#1e40af", cursor: "pointer", fontWeight: 600 }}>PW초기화</button>
                   <button onClick={() => toggleActive(s.id, true)} style={{ background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#991b1b", cursor: "pointer", fontWeight: 600 }}>비활성화</button>
                 </div>
               </div>
+              {/* PW 초기화 입력 팝업 */}
+              {resetPwId === s.id && (
+                <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px", marginTop: "12px" }}>
+                  <div style={{ fontSize: "13px", color: "#1e40af", fontWeight: 600, marginBottom: "8px" }}>"{s.name || s.email}" 새 비밀번호 설정</div>
+                  <input type="text" value={resetPwValue} onChange={e => setResetPwValue(e.target.value)} placeholder="새 비밀번호 (6자 이상)" style={{ width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", marginBottom: "10px" }} />
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button onClick={() => { setResetPwId(null); setResetPwValue(""); }} style={{ flex: 1, padding: "8px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "white", fontSize: "12px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
+                    <button onClick={resetStaffPassword} disabled={saving} style={{ flex: 1, padding: "8px", border: "none", borderRadius: "8px", background: "#1e40af", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "처리 중..." : "비밀번호 변경"}</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
           {activeStaff.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>활성 직원이 없습니다.</p>}
@@ -1554,13 +1586,19 @@ export default function App() {
     showToast("거래처가 삭제되었습니다.");
   };
 
-  // ── 본인 비밀번호 재설정 이메일 발송 ──
+  // ── 본인 비밀번호 변경 ──
+  const [showMyPwReset, setShowMyPwReset] = useState(false);
+  const [myNewPassword, setMyNewPassword] = useState("");
+
   const handleResetMyPassword = async () => {
-    const { error } = await supabase.auth.resetPasswordForEmail(session.user.email);
+    if (!myNewPassword || myNewPassword.length < 6) return alert("비밀번호는 6자 이상 입력해주세요.");
+    const { error } = await supabase.auth.updateUser({ password: myNewPassword });
     if (error) {
-      showToast("이메일 발송에 실패했습니다.", "error");
+      showToast("비밀번호 변경에 실패했습니다.", "error");
     } else {
-      showToast("비밀번호 재설정 이메일이 발송되었습니다. 이메일을 확인해주세요.", "info");
+      showToast("비밀번호가 변경되었습니다.");
+      setShowMyPwReset(false);
+      setMyNewPassword("");
     }
   };
 
@@ -1602,10 +1640,22 @@ export default function App() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "12px", opacity: 0.6 }}>{session.user.email}</span>
-          <button onClick={handleResetMyPassword} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "8px", padding: "6px 12px", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>비밀번호 변경</button>
+          <button onClick={() => setShowMyPwReset(!showMyPwReset)} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "8px", padding: "6px 12px", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>{showMyPwReset ? "닫기" : "비밀번호 변경"}</button>
           <button onClick={handleLogout} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "8px", padding: "6px 12px", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>로그아웃</button>
         </div>
       </div>
+
+      {/* 본인 비밀번호 변경 팝업 */}
+      {showMyPwReset && (
+        <div style={{ background: "#eff6ff", padding: "16px 24px", borderBottom: "1px solid #bfdbfe" }}>
+          <div style={{ maxWidth: "680px", margin: "0 auto", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "13px", color: "#1e40af", fontWeight: 600 }}>새 비밀번호</span>
+            <input type="text" value={myNewPassword} onChange={e => setMyNewPassword(e.target.value)} placeholder="6자 이상 입력" style={{ flex: 1, minWidth: "150px", padding: "8px 14px", border: "1px solid #bfdbfe", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" }} />
+            <button onClick={handleResetMyPassword} style={{ background: "#1e40af", border: "none", borderRadius: "8px", padding: "8px 18px", color: "white", fontSize: "13px", cursor: "pointer", fontWeight: 600 }}>변경</button>
+            <button onClick={() => { setShowMyPwReset(false); setMyNewPassword(""); }} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "8px 14px", color: "#64748b", fontSize: "13px", cursor: "pointer" }}>취소</button>
+          </div>
+        </div>
+      )}
 
       {/* 탭 네비게이션 */}
       <div style={{ display: "flex", gap: "4px", padding: "12px 16px", background: "white", borderBottom: "1px solid #e8ecf2" }}>
