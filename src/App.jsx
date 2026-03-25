@@ -1006,7 +1006,7 @@ function HaccpManagement({ clientId }) {
       .from("water_test_config")
       .select("*")
       .eq("client_id", clientId)
-      .single();
+      .maybeSingle();
 
     setRecords(recs || []);
     setWaterConfig(wc || null);
