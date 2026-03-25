@@ -1936,29 +1936,42 @@ export default function App() {
 
   // ── Excel 내보내기 ──
   const handleExport = () => {
-    const data = clients.map(c => ({
-      "업체명": c.name,
-      "업종": c.type,
-      "담당자": c.contact,
-      "연락처": c.phone,
-      "이메일": c.email,
-      "주소": c.address,
-      "컨설팅 종류": c.consultType,
-      "진행 상태": c.status,
-      "컨설팅 비용": c.consultFee || 0,
-      "사후관리 비용": c.maintenanceFee || 0,
-      "메모": c.memo,
-      "등록일": c.registeredAt,
-    }));
+    const data = clients.map(c => {
+      const bizTypes = c.bizTypes || [];
+      return {
+        "업체명": c.name,
+        "사업자등록번호": c.bizNumber || "",
+        "주소": c.address,
+        "인증여부": c.certified ? "인증" : "미인증",
+        "인증일자": c.certifiedDate || "",
+        "업종": bizTypes.map(bt => bt.type).filter(Boolean).join(" / "),
+        "인허가번호": bizTypes.map(bt => bt.license).filter(Boolean).join(" / "),
+        "유형": bizTypes.map(bt => (bt.categories || []).join(", ")).filter(Boolean).join(" / "),
+        "대표자명": c.ceoName || "",
+        "대표자 생년월일": c.ceoBirth || "",
+        "대표자 연락처": c.ceoPhone || "",
+        "담당자": c.contact,
+        "연락처": c.phone,
+        "이메일": c.email,
+        "컨설팅 종류": c.consultType,
+        "컨설팅 비용": c.consultFee || 0,
+        "사후관리 비용": c.maintenanceFee || 0,
+        "계약일자": c.contractDate || "",
+        "메모": c.memo,
+        "등록일": c.registeredAt,
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "거래처 목록");
 
-    // 열 너비 설정
     ws["!cols"] = [
-      { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 15 },
-      { wch: 25 }, { wch: 30 }, { wch: 12 }, { wch: 12 },
-      { wch: 15 }, { wch: 15 }, { wch: 30 }, { wch: 12 },
+      { wch: 15 }, { wch: 16 }, { wch: 30 }, { wch: 8 }, { wch: 12 },
+      { wch: 18 }, { wch: 18 }, { wch: 20 },
+      { wch: 10 }, { wch: 12 }, { wch: 15 },
+      { wch: 10 }, { wch: 15 }, { wch: 25 },
+      { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 12 },
+      { wch: 30 }, { wch: 12 },
     ];
 
     XLSX.writeFile(wb, `거래처목록_${new Date().toISOString().split("T")[0]}.xlsx`);
@@ -1982,17 +1995,39 @@ export default function App() {
         const name = row["업체명"] || row["name"] || "";
         if (!name.trim()) { failCount++; continue; }
 
+        // 업종/인허가/유형 파싱 (/ 로 구분된 문자열)
+        const types = (row["업종"] || row["type"] || "").split(" / ").filter(Boolean);
+        const licenses = (row["인허가번호"] || "").split(" / ").filter(Boolean);
+        const categories = (row["유형"] || "").split(" / ").filter(Boolean);
+        const bizTypes = types.length > 0 ? types.map((t, i) => ({
+          type: t,
+          license: licenses[i] || "",
+          categories: categories[i] ? categories[i].split(", ").filter(Boolean) : [],
+        })) : [];
+
+        const cf = Number(row["컨설팅 비용"] || row["consult_fee"] || 0);
+        const mf = Number(row["사후관리 비용"] || row["maintenance_fee"] || 0);
+        const isCertified = (row["인증여부"] || "") === "인증";
+
         const dbData = {
           name: name.trim(),
-          type: row["업종"] || row["type"] || "",
+          biz_number: row["사업자등록번호"] || row["biz_number"] || "",
+          address: row["주소"] || row["address"] || "",
+          certified: isCertified,
+          certified_date: isCertified ? (row["인증일자"] || null) : null,
+          type: types.join(", "),
+          biz_types: JSON.stringify(bizTypes),
+          ceo_name: row["대표자명"] || row["ceo_name"] || "",
+          ceo_birth: row["대표자 생년월일"] || row["ceo_birth"] || "",
+          ceo_phone: row["대표자 연락처"] || row["ceo_phone"] || "",
           contact: row["담당자"] || row["contact"] || "",
           phone: row["연락처"] || row["phone"] || "",
           email: row["이메일"] || row["email"] || "",
-          address: row["주소"] || row["address"] || "",
           consult_type: row["컨설팅 종류"] || row["consult_type"] || "신규인증",
-          status: row["진행 상태"] || row["status"] || "상담중",
-          consult_fee: Number(row["컨설팅 비용"] || row["consult_fee"] || 0),
-          maintenance_fee: Number(row["사후관리 비용"] || row["maintenance_fee"] || 0),
+          consult_fee: cf,
+          maintenance_fee: mf,
+          contract_date: row["계약일자"] || row["contract_date"] || null,
+          status: (cf > 0 || mf > 0) ? "계약완료" : "상담중",
           memo: row["메모"] || row["memo"] || "",
           registered_at: row["등록일"] || row["registered_at"] || new Date().toISOString().split("T")[0],
         };
