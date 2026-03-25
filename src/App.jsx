@@ -1705,6 +1705,7 @@ export default function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
+  const [importErrors, setImportErrors] = useState(null);
 
   const showToast = (message, type = "success") => setToast({ message, type });
 
@@ -1988,59 +1989,91 @@ export default function App() {
 
       if (rows.length === 0) return showToast("빈 파일입니다.", "error");
 
+      // 가이드 행 제거 — "필수 입력" 또는 예시 데이터(이탤릭 회색) 스킵
+      const filtered = rows.filter(row => {
+        const first = String(row["업체명"] || row["name"] || "").trim();
+        return first && first !== "필수 입력";
+      });
+
+      if (filtered.length === 0) return showToast("입력된 데이터가 없습니다. 예시 행만 있는지 확인해주세요.", "error");
+
       let successCount = 0;
-      let failCount = 0;
+      const errors = [];
+      const validConsultTypes = ["신규인증", "정기 사후관리", "단기 사후관리", "연장심사"];
 
-      for (const row of rows) {
-        const name = row["업체명"] || row["name"] || "";
-        if (!name.trim()) { failCount++; continue; }
+      for (let i = 0; i < filtered.length; i++) {
+        const row = filtered[i];
+        const rowNum = i + 1;
+        const rowErrors = [];
 
-        // 업종/인허가/유형 파싱 (/ 로 구분된 문자열)
-        const types = (row["업종"] || row["type"] || "").split(" / ").filter(Boolean);
-        const licenses = (row["인허가번호"] || "").split(" / ").filter(Boolean);
-        const categories = (row["유형"] || "").split(" / ").filter(Boolean);
-        const bizTypes = types.length > 0 ? types.map((t, i) => ({
-          type: t,
-          license: licenses[i] || "",
-          categories: categories[i] ? categories[i].split(", ").filter(Boolean) : [],
+        const name = String(row["업체명"] || row["name"] || "").trim();
+        if (!name) { rowErrors.push("업체명이 비어있습니다 (필수 항목)"); }
+
+        const consultType = String(row["컨설팅 종류"] || row["consult_type"] || "신규인증").trim();
+        if (!validConsultTypes.includes(consultType)) {
+          rowErrors.push(`컨설팅 종류 "${consultType}" → 신규인증 / 정기 사후관리 / 단기 사후관리 / 연장심사 중 하나를 입력하세요`);
+        }
+
+        const certVal = String(row["인증여부"] || "").trim();
+        if (certVal && certVal !== "인증" && certVal !== "미인증") {
+          rowErrors.push(`인증여부 "${certVal}" → "인증" 또는 "미인증"만 입력하세요`);
+        }
+
+        const cfRaw = row["컨설팅 비용"] || row["consult_fee"] || 0;
+        const mfRaw = row["사후관리 비용"] || row["maintenance_fee"] || 0;
+        if (cfRaw && isNaN(Number(cfRaw))) { rowErrors.push(`컨설팅 비용 "${cfRaw}" → 숫자만 입력하세요`); }
+        if (mfRaw && isNaN(Number(mfRaw))) { rowErrors.push(`사후관리 비용 "${mfRaw}" → 숫자만 입력하세요`); }
+
+        if (rowErrors.length > 0) {
+          errors.push({ row: rowNum, name: name || "(이름 없음)", issues: rowErrors });
+          continue;
+        }
+
+        const types = String(row["업종"] || row["type"] || "").split(" / ").filter(Boolean);
+        const licenses = String(row["인허가번호"] || "").split(" / ").filter(Boolean);
+        const categories = String(row["유형"] || "").split(" / ").filter(Boolean);
+        const bizTypes = types.length > 0 ? types.map((t, idx) => ({
+          type: t, license: licenses[idx] || "",
+          categories: categories[idx] ? categories[idx].split(", ").filter(Boolean) : [],
         })) : [];
 
-        const cf = Number(row["컨설팅 비용"] || row["consult_fee"] || 0);
-        const mf = Number(row["사후관리 비용"] || row["maintenance_fee"] || 0);
-        const isCertified = (row["인증여부"] || "") === "인증";
+        const cf = Number(cfRaw) || 0;
+        const mf = Number(mfRaw) || 0;
+        const isCertified = certVal === "인증";
 
         const dbData = {
-          name: name.trim(),
-          biz_number: row["사업자등록번호"] || row["biz_number"] || "",
-          address: row["주소"] || row["address"] || "",
-          certified: isCertified,
-          certified_date: isCertified ? (row["인증일자"] || null) : null,
-          type: types.join(", "),
-          biz_types: JSON.stringify(bizTypes),
-          ceo_name: row["대표자명"] || row["ceo_name"] || "",
-          ceo_birth: row["대표자 생년월일"] || row["ceo_birth"] || "",
-          ceo_phone: row["대표자 연락처"] || row["ceo_phone"] || "",
-          contact: row["담당자"] || row["contact"] || "",
-          phone: row["연락처"] || row["phone"] || "",
-          email: row["이메일"] || row["email"] || "",
-          consult_type: row["컨설팅 종류"] || row["consult_type"] || "신규인증",
-          consult_fee: cf,
-          maintenance_fee: mf,
+          name, biz_number: String(row["사업자등록번호"] || row["biz_number"] || ""),
+          address: String(row["주소"] || row["address"] || ""),
+          certified: isCertified, certified_date: isCertified ? (row["인증일자"] || null) : null,
+          type: types.join(", "), biz_types: JSON.stringify(bizTypes),
+          ceo_name: String(row["대표자명"] || row["ceo_name"] || ""),
+          ceo_birth: String(row["대표자 생년월일"] || row["ceo_birth"] || ""),
+          ceo_phone: String(row["대표자 연락처"] || row["ceo_phone"] || ""),
+          contact: String(row["담당자"] || row["contact"] || ""),
+          phone: String(row["연락처"] || row["phone"] || ""),
+          email: String(row["이메일"] || row["email"] || ""),
+          consult_type: consultType, consult_fee: cf, maintenance_fee: mf,
           contract_date: row["계약일자"] || row["contract_date"] || null,
           status: (cf > 0 || mf > 0) ? "계약완료" : "상담중",
-          memo: row["메모"] || row["memo"] || "",
+          memo: String(row["메모"] || row["memo"] || ""),
           registered_at: row["등록일"] || row["registered_at"] || new Date().toISOString().split("T")[0],
         };
 
         const { error } = await supabase.from("clients").insert([dbData]);
-        if (error) { failCount++; } else { successCount++; }
+        if (error) {
+          errors.push({ row: rowNum, name, issues: [`DB 저장 실패: ${error.message}`] });
+        } else { successCount++; }
       }
 
-      showToast(`${successCount}건 추가 완료${failCount > 0 ? `, ${failCount}건 실패` : ""}`);
-      fetchClients();
+      if (errors.length > 0) {
+        setImportErrors({ successCount, errors });
+      } else {
+        showToast(`${successCount}건 모두 추가 완료!`);
+      }
+      if (successCount > 0) fetchClients();
     } catch (err) {
       console.error("Excel 가져오기 실패:", err);
-      showToast("Excel 파일을 읽지 못했습니다.", "error");
+      setImportErrors({ successCount: 0, errors: [{ row: 0, name: "파일 오류", issues: ["Excel 파일을 읽지 못했습니다. .xlsx 형식인지 확인해주세요."] }] });
     }
   };
 
@@ -2124,6 +2157,50 @@ export default function App() {
 
       {/* 거래처 추가 모달 */}
       {showAddModal && <AddClientModal onClose={() => setShowAddModal(false)} onSave={handleAddClient} saving={saving} />}
+
+      {/* Excel 가져오기 에러 팝업 */}
+      {importErrors && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px", backdropFilter: "blur(4px)" }} onClick={() => setImportErrors(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: "20px", padding: "28px", width: "100%", maxWidth: "500px", maxHeight: "80vh", overflow: "auto" }}>
+            <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#991b1b", margin: "0 0 8px 0" }}>Excel 가져오기 결과</h3>
+            {importErrors.successCount > 0 && (
+              <div style={{ background: "#d1fae5", color: "#065f46", padding: "10px 14px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, marginBottom: "12px" }}>
+                {importErrors.successCount}건 추가 성공
+              </div>
+            )}
+            <div style={{ background: "#fee2e2", color: "#991b1b", padding: "10px 14px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, marginBottom: "16px" }}>
+              {importErrors.errors.length}건 실패
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "400px", overflowY: "auto" }}>
+              {importErrors.errors.map((err, idx) => (
+                <div key={idx} style={{ background: "#fef2f2", borderRadius: "12px", padding: "14px", border: "1px solid #fecaca" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 600, color: "#991b1b", marginBottom: "6px" }}>
+                    {err.row > 0 ? `${err.row}번째 데이터` : ""} {err.name && `"${err.name}"`}
+                  </div>
+                  {err.issues.map((issue, ii) => (
+                    <div key={ii} style={{ fontSize: "13px", color: "#b91c1c", padding: "4px 0", display: "flex", gap: "6px", alignItems: "flex-start" }}>
+                      <span style={{ flexShrink: 0 }}>•</span>
+                      <span>{issue}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: "16px", padding: "12px", background: "#eff6ff", borderRadius: "10px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e40af", marginBottom: "6px" }}>해결 방법</div>
+              <div style={{ fontSize: "12px", color: "#3b82f6", lineHeight: "1.6" }}>
+                1. Excel 파일을 열어 위에 표시된 항목을 수정해주세요.<br/>
+                2. 업체명은 반드시 입력해야 합니다.<br/>
+                3. 컨설팅 종류는 신규인증/정기 사후관리/단기 사후관리/연장심사 중 하나만 입력하세요.<br/>
+                4. 인증여부는 "인증" 또는 "미인증"만 입력하세요.<br/>
+                5. 비용은 숫자만 입력하세요 (쉼표, 원 등 제외).<br/>
+                6. 수정 후 다시 "Excel 가져오기"를 해주세요.
+              </div>
+            </div>
+            <button onClick={() => setImportErrors(null)} style={{ width: "100%", padding: "12px", border: "none", borderRadius: "12px", background: "#1a1a2e", color: "white", fontSize: "14px", fontWeight: 700, cursor: "pointer", marginTop: "16px" }}>확인</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
