@@ -129,3 +129,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 5. water_test_config 조회 시 .maybeSingle() 사용 (.single() 금지)
 6. 한글 태그 입력 시 onCompositionStart/End로 조합 중복 방지
 7. Edge Function 호출 시 apikey 헤더 필수
+8. **코드 수정 시 반드시 APP_VERSION 올리기** (6행: `const APP_VERSION = "v1.0.0"`)
+   - 작은 수정/버그 → v1.0.X (예: v1.0.1)
+   - 새 기능 추가 → v1.X.0 (예: v1.1.0)
+   - 큰 구조 변경 → vX.0.0 (예: v2.0.0)
