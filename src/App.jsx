@@ -1031,14 +1031,11 @@ function HaccpManagement({ clientId }) {
           .from("haccp-files")
           .upload(path, f);
         if (!uploadErr) {
-          const { data: urlData } = supabase.storage
-            .from("haccp-files")
-            .getPublicUrl(path);
-          uploaded.push({ url: urlData.publicUrl, name: f.name });
+          uploaded.push({ path, name: f.name });
         }
       }
       if (uploaded.length > 0) {
-        fileUrl = JSON.stringify(uploaded.map(u => u.url));
+        fileUrl = JSON.stringify(uploaded.map(u => u.path));
         fileName = JSON.stringify(uploaded.map(u => u.name));
       }
     }
@@ -1067,15 +1064,30 @@ function HaccpManagement({ clientId }) {
     return !error;
   };
 
-  // ── 파일 파싱 헬퍼 (기존 단일 파일 + 새 배열 형식 모두 지원) ──
+  // ── Signed URL 생성 헬퍼 ──
+  const getSignedFileUrl = async (pathOrUrl) => {
+    if (!pathOrUrl) return "";
+    // 이미 완전한 URL이면 (기존 Public URL) path를 추출
+    if (pathOrUrl.startsWith("http")) {
+      const match = pathOrUrl.match(/haccp-files\/(.+)$/);
+      if (match) pathOrUrl = decodeURIComponent(match[1]);
+      else return pathOrUrl; // 추출 불가하면 그대로 반환
+    }
+    const { data } = await supabase.storage
+      .from("haccp-files")
+      .createSignedUrl(pathOrUrl, 3600); // 1시간 유효
+    return data?.signedUrl || "";
+  };
+
+  // ── 파일 파싱 헬퍼 (path 또는 기존 URL 모두 지원) ──
   const parseFiles = (fileUrl, fileName) => {
     if (!fileUrl) return [];
     try {
-      const urls = JSON.parse(fileUrl);
+      const paths = JSON.parse(fileUrl);
       const names = JSON.parse(fileName || "[]");
-      return urls.map((u, i) => ({ url: u, name: names[i] || "파일" }));
+      return paths.map((p, i) => ({ path: p, name: names[i] || "파일", url: "" }));
     } catch {
-      return [{ url: fileUrl, name: fileName || "첨부파일" }];
+      return [{ path: fileUrl, name: fileName || "첨부파일", url: "" }];
     }
   };
 
@@ -1118,14 +1130,11 @@ function HaccpManagement({ clientId }) {
         .from("haccp-files")
         .upload(path, f);
       if (!uploadErr) {
-        const { data: urlData } = supabase.storage
-          .from("haccp-files")
-          .getPublicUrl(path);
-        allFiles.push({ url: urlData.publicUrl, name: f.name });
+        allFiles.push({ path, name: f.name });
       }
     }
 
-    const fileUrl = allFiles.length > 0 ? JSON.stringify(allFiles.map(f => f.url)) : "";
+    const fileUrl = allFiles.length > 0 ? JSON.stringify(allFiles.map(f => f.path)) : "";
     const fileName = allFiles.length > 0 ? JSON.stringify(allFiles.map(f => f.name)) : "";
 
     const { data, error } = await supabase
@@ -1244,7 +1253,7 @@ function HaccpManagement({ clientId }) {
                                 <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px", maxHeight: editData.files.length > 3 ? "120px" : "auto", overflowY: editData.files.length > 3 ? "auto" : "visible" }}>
                                   {editData.files.map((f, idx) => (
                                     <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", background: "#eff6ff", padding: "6px 10px", borderRadius: "8px" }}>
-                                      <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", textDecoration: "none", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {f.name}</a>
+                                      <button onClick={async () => { const url = await getSignedFileUrl(f.path); if (url) window.open(url, "_blank"); }} style={{ fontSize: "12px", color: "#3b82f6", textDecoration: "none", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>📎 {f.name}</button>
                                       <button onClick={() => removeEditFile(idx)} style={{ background: "none", border: "none", color: "#ef4444", fontSize: "14px", cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>✕</button>
                                     </div>
                                   ))}
@@ -1321,9 +1330,9 @@ function HaccpManagement({ clientId }) {
                               {r.file_url && (
                                 <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px", maxHeight: parseFiles(r.file_url, r.file_name).length > 3 ? "100px" : "auto", overflowY: parseFiles(r.file_url, r.file_name).length > 3 ? "auto" : "visible" }}>
                                   {parseFiles(r.file_url, r.file_name).map((f, idx) => (
-                                    <a key={idx} href={f.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#3b82f6", display: "inline-flex", alignItems: "center", gap: "4px", textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: "6px", width: "fit-content" }}>
+                                    <button key={idx} onClick={async () => { const url = await getSignedFileUrl(f.path); if (url) window.open(url, "_blank"); }} style={{ fontSize: "12px", color: "#3b82f6", display: "inline-flex", alignItems: "center", gap: "4px", textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: "6px", width: "fit-content", border: "none", cursor: "pointer" }}>
                                       📎 {f.name}
-                                    </a>
+                                    </button>
                                   ))}
                                 </div>
                               )}
