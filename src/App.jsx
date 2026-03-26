@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
+const APP_VERSION = "v1.0.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -2445,6 +2446,7 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <span style={{ fontSize: "22px" }}>🏢</span>
           <span style={{ fontSize: "17px", fontWeight: 700, letterSpacing: "-0.3px" }}>식품경영컨설팅 안</span>
+          <span style={{ fontSize: "10px", opacity: 0.4, marginLeft: "-4px", alignSelf: "flex-end", marginBottom: "2px" }}>{APP_VERSION}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "12px", opacity: 0.6 }}>{session.user.email}</span>
