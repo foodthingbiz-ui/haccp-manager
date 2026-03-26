@@ -2004,7 +2004,7 @@ function LoginScreen({ onLogin }) {
       <div style={{ background: "white", borderRadius: "24px", padding: "40px 32px", width: "100%", maxWidth: "400px", boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
           <div style={{ fontSize: "36px", marginBottom: "8px" }}>🏢</div>
-          <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 4px 0" }}>거래처 관리</h1>
+          <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 4px 0" }}>식품경영컨설팅 안</h1>
           <p style={{ color: "#94a3b8", fontSize: "14px", margin: 0 }}>HACCP 컨설팅</p>
         </div>
         <div style={{ display: "grid", gap: "16px" }}>
@@ -2444,7 +2444,7 @@ export default function App() {
       <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)", padding: "16px 24px", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <span style={{ fontSize: "22px" }}>🏢</span>
-          <span style={{ fontSize: "17px", fontWeight: 700, letterSpacing: "-0.3px" }}>거래처 관리</span>
+          <span style={{ fontSize: "17px", fontWeight: 700, letterSpacing: "-0.3px" }}>식품경영컨설팅 안</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "12px", opacity: 0.6 }}>{session.user.email}</span>
