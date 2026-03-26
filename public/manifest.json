@@ -1,0 +1,22 @@
+{
+  "name": "식품경영컨설팅 안",
+  "short_name": "컨설팅 안",
+  "description": "HACCP 컨설팅 거래처 관리 시스템",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
