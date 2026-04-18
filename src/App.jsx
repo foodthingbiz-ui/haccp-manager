@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.0.0";
+const APP_VERSION = "v1.0.1";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -27,6 +27,23 @@ const RECORD_TYPES = { "방문": "🏢", "상담": "💬", "전화": "📞" };
 
 const RENEWAL_PERIODS = { "1m": "1개월 후", "3m": "3개월 후", "6m": "6개월 후", "1y": "1년 후" };
 const ALERT_TIMINGS = { "1d": "1일 전", "1w": "1주일 전", "15d": "15일 전", "1m": "1개월 전" };
+
+// 파일 업로드 제한
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_FILE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "application/pdf"];
+const ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "pdf"];
+
+// 파일 검증 함수 — 통과 시 null, 실패 시 에러 메시지 반환
+function validateFile(file) {
+  if (file.size > MAX_FILE_SIZE) {
+    return `"${file.name}" 파일이 너무 큽니다 (${(file.size / 1024 / 1024).toFixed(1)}MB). 최대 10MB까지만 업로드할 수 있습니다.`;
+  }
+  const ext = file.name.split(".").pop().toLowerCase();
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+    return `"${file.name}" 파일 형식은 지원하지 않습니다. PDF, JPG, PNG, GIF, WEBP만 가능합니다.`;
+  }
+  return null;
+}
 
 // 갱신일자 자동 계산 (윤달/월별 일수 처리)
 function calcRenewalDate(baseDate, period) {
@@ -1261,7 +1278,19 @@ function HaccpManagement({ clientId }) {
                                 </div>
                               )}
                               {/* 새 파일 추가 */}
-                              <input type="file" accept="image/*,.pdf" multiple onChange={e => setEditNewFiles(prev => [...prev, ...Array.from(e.target.files)])} style={{ fontSize: "13px", color: "#64748b" }} />
+                              <input type="file" accept="image/*,.pdf" multiple onChange={e => {
+                                const newFiles = Array.from(e.target.files);
+                                const valid = [];
+                                const invalid = [];
+                                newFiles.forEach(f => {
+                                  const err = validateFile(f);
+                                  if (err) invalid.push(err);
+                                  else valid.push(f);
+                                });
+                                if (invalid.length > 0) alert(invalid.join("\n\n"));
+                                if (valid.length > 0) setEditNewFiles(prev => [...prev, ...valid]);
+                                e.target.value = "";
+                              }} style={{ fontSize: "13px", color: "#64748b" }} />
                               {editNewFiles.length > 0 && (
                                 <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px" }}>
                                   {editNewFiles.map((f, idx) => (
@@ -1473,13 +1502,25 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
         )}
 
         <div>
-          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>파일 첨부 (여러 개 가능)</label>
-          <input type="file" accept="image/*,.pdf" multiple onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files)])} style={{ fontSize: "13px", color: "#64748b" }} />
+          <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>파일 첨부 (최대 10MB, PDF/이미지)</label>
+          <input type="file" accept="image/*,.pdf" multiple onChange={e => {
+            const newFiles = Array.from(e.target.files);
+            const valid = [];
+            const invalid = [];
+            newFiles.forEach(f => {
+              const err = validateFile(f);
+              if (err) invalid.push(err);
+              else valid.push(f);
+            });
+            if (invalid.length > 0) alert(invalid.join("\n\n"));
+            if (valid.length > 0) setFiles(prev => [...prev, ...valid]);
+            e.target.value = "";
+          }} style={{ fontSize: "13px", color: "#64748b" }} />
           {files.length > 0 && (
             <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px", maxHeight: files.length > 3 ? "100px" : "auto", overflowY: files.length > 3 ? "auto" : "visible" }}>
               {files.map((f, idx) => (
                 <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#3b82f6" }}>
-                  <span style={{ flex: 1 }}>📎 {f.name}</span>
+                  <span style={{ flex: 1 }}>📎 {f.name} <span style={{ color: "#94a3b8", fontSize: "11px" }}>({(f.size / 1024).toFixed(0)}KB)</span></span>
                   <button onClick={() => removeFile(idx)} style={{ background: "none", border: "none", color: "#ef4444", fontSize: "14px", cursor: "pointer", padding: "0 4px" }}>✕</button>
                 </div>
               ))}
@@ -1928,7 +1969,7 @@ function StaffManagement({ showToast }) {
               {resetPwId === s.id && (
                 <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px", marginTop: "12px" }}>
                   <div style={{ fontSize: "13px", color: "#1e40af", fontWeight: 600, marginBottom: "8px" }}>"{s.name || s.email}" 새 비밀번호 설정</div>
-                  <input type="text" value={resetPwValue} onChange={e => setResetPwValue(e.target.value)} placeholder="새 비밀번호 (6자 이상)" style={{ width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", marginBottom: "10px" }} />
+                  <input type="password" value={resetPwValue} onChange={e => setResetPwValue(e.target.value)} placeholder="새 비밀번호 (6자 이상)" style={{ width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", marginBottom: "10px" }} />
                   <div style={{ display: "flex", gap: "8px" }}>
                     <button onClick={() => { setResetPwId(null); setResetPwValue(""); }} style={{ flex: 1, padding: "8px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "white", fontSize: "12px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
                     <button onClick={resetStaffPassword} disabled={saving} style={{ flex: 1, padding: "8px", border: "none", borderRadius: "8px", background: "#1e40af", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "처리 중..." : "비밀번호 변경"}</button>
@@ -2460,7 +2501,7 @@ export default function App() {
         <div style={{ background: "#eff6ff", padding: "16px 24px", borderBottom: "1px solid #bfdbfe" }}>
           <div style={{ maxWidth: "680px", margin: "0 auto", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
             <span style={{ fontSize: "13px", color: "#1e40af", fontWeight: 600 }}>새 비밀번호</span>
-            <input type="text" value={myNewPassword} onChange={e => setMyNewPassword(e.target.value)} placeholder="6자 이상 입력" style={{ flex: 1, minWidth: "150px", padding: "8px 14px", border: "1px solid #bfdbfe", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" }} />
+            <input type="password" value={myNewPassword} onChange={e => setMyNewPassword(e.target.value)} placeholder="6자 이상 입력" style={{ flex: 1, minWidth: "150px", padding: "8px 14px", border: "1px solid #bfdbfe", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" }} />
             <button onClick={handleResetMyPassword} style={{ background: "#1e40af", border: "none", borderRadius: "8px", padding: "8px 18px", color: "white", fontSize: "13px", cursor: "pointer", fontWeight: 600 }}>변경</button>
             <button onClick={() => { setShowMyPwReset(false); setMyNewPassword(""); }} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "8px 14px", color: "#64748b", fontSize: "13px", cursor: "pointer" }}>취소</button>
           </div>
