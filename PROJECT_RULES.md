@@ -74,8 +74,10 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 - created_at
 
 **Supabase Storage:**
-- 버킷명: haccp-files (Public)
+- 버킷명: haccp-files (Private)
 - 경로: {client_id}/{category}/{timestamp}_{random}.{ext}
+- file_url에는 경로(path)만 저장, 표시할 때 Signed URL(1시간 만료) 생성
+- getPublicUrl 사용 금지 → createSignedUrl 사용
 
 **Edge Function:**
 - 이름: reset-password (Verify JWT: OFF)
