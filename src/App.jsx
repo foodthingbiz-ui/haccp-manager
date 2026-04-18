@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.0.1";
+const APP_VERSION = "v1.1.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -547,7 +547,7 @@ function ClientList({ clients, onNavigate, onAdd, onExport, onImport }) {
 }
 
 // ─── 거래처 상세 ───
-function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDelete, userRole }) {
+function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDelete, userRole, showToast }) {
   const [activeTab, setActiveTab] = useState("info");
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [newRecord, setNewRecord] = useState({ date: new Date().toISOString().split("T")[0], type: "상담", content: "" });
@@ -983,7 +983,7 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
 
       {/* ── HACCP Tab ── */}
       {activeTab === "haccp" && (
-        <HaccpManagement clientId={client.id} />
+        <HaccpManagement clientId={client.id} showToast={showToast} />
       )}
     </div>
   );
@@ -1001,7 +1001,7 @@ const HACCP_CATEGORIES = [
   { key: "etc_note", label: "기타내용", icon: "📌" },
 ];
 
-function HaccpManagement({ clientId }) {
+function HaccpManagement({ clientId, showToast }) {
   const [records, setRecords] = useState([]);
   const [waterConfig, setWaterConfig] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1239,7 +1239,7 @@ function HaccpManagement({ clientId }) {
 
                   {/* 기록 추가 폼 */}
                   {!(cat.key === "water_test" && (waterConfig?.water_type || "상수도") === "상수도") && (
-                    <HaccpRecordForm category={cat.key} onAdd={addRecord} saving={saving} inputStyle={inputStyle} />
+                    <HaccpRecordForm category={cat.key} onAdd={addRecord} saving={saving} inputStyle={inputStyle} showToast={showToast} />
                   )}
 
                   {/* 기록 목록 */}
@@ -1397,7 +1397,7 @@ function HaccpManagement({ clientId }) {
 }
 
 // ─── HACCP 기록 추가 폼 ───
-function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
+function HaccpRecordForm({ category, onAdd, saving, inputStyle, showToast }) {
   const [itemName, setItemName] = useState("");
   const [recordDate, setRecordDate] = useState(new Date().toISOString().split("T")[0]);
   const [memo, setMemo] = useState("");
@@ -1420,8 +1420,8 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle }) {
   const finalRenewalDate = renewalType === "direct" ? renewalDate : autoRenewalDate;
 
   const handleSubmit = async () => {
-    if (needsItemName && !itemName.trim()) return alert(isEtcNote ? "제목을 입력해주세요." : "항목명을 입력해주세요.");
-    if (isEtcNote && !memo.trim()) return alert("내용을 입력해주세요.");
+    if (needsItemName && !itemName.trim()) return showToast(isEtcNote ? "제목을 입력해주세요." : "항목명을 입력해주세요.", "error");
+    if (isEtcNote && !memo.trim()) return showToast("내용을 입력해주세요.", "error");
     const renewalData = !isEtcNote ? { renewalType, renewalDate: finalRenewalDate, renewalPeriod: renewalType === "auto" ? renewalPeriod : "", alertEnabled, alertTiming: alertEnabled ? alertTiming : "" } : {};
     const success = await onAdd(category, itemName, isEtcNote ? null : recordDate, memo, files.length > 0 ? files : null, renewalData);
     if (success) {
@@ -1561,7 +1561,7 @@ function TagInput({ tags, onChange, placeholder }) {
 }
 
 // ─── 거래처 추가 모달 ───
-function AddClientModal({ onClose, onSave, saving }) {
+function AddClientModal({ onClose, onSave, saving, showToast }) {
   const [form, setForm] = useState({
     name: "", bizNumber: "", address: "",
     bizTypes: [{ type: "", license: "", categories: [] }],
@@ -1585,7 +1585,7 @@ function AddClientModal({ onClose, onSave, saving }) {
   };
 
   const handleSave = () => {
-    if (!form.name.trim()) return alert("업체명을 입력해주세요.");
+    if (!form.name.trim()) return showToast("업체명을 입력해주세요.", "error");
     const cf = isMaintenanceOnly ? 0 : (Number(form.consultFee) || 0);
     const mf = isConsultOnly ? 0 : (Number(form.maintenanceFee) || 0);
     const autoStatus = (cf > 0 || mf > 0) ? "계약완료" : "상담중";
@@ -1599,8 +1599,8 @@ function AddClientModal({ onClose, onSave, saving }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px", backdropFilter: "blur(4px)" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: "20px", padding: "28px", width: "100%", maxWidth: "500px", maxHeight: "85vh", overflow: "auto" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px", backdropFilter: "blur(4px)" }}>
+      <div style={{ background: "white", borderRadius: "20px", padding: "28px", width: "100%", maxWidth: "500px", maxHeight: "85vh", overflow: "auto" }}>
         <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 20px 0" }}>새 거래처 추가</h3>
         <div style={{ display: "grid", gap: "14px" }}>
 
@@ -1774,8 +1774,8 @@ function StaffManagement({ showToast }) {
 
   // ── 직원 추가 ──
   const handleAddStaff = async () => {
-    if (!newStaff.email || !newStaff.password) return alert("이메일과 비밀번호를 입력해주세요.");
-    if (newStaff.password.length < 6) return alert("비밀번호는 6자 이상이어야 합니다.");
+    if (!newStaff.email || !newStaff.password) return showToast("이메일과 비밀번호를 입력해주세요.", "error");
+    if (newStaff.password.length < 6) return showToast("비밀번호는 6자 이상이어야 합니다.", "error");
     setSaving(true);
 
     // Supabase Auth로 회원가입
@@ -1871,7 +1871,7 @@ function StaffManagement({ showToast }) {
   const [resetPwValue, setResetPwValue] = useState("");
 
   const resetStaffPassword = async () => {
-    if (!resetPwValue || resetPwValue.length < 6) return alert("비밀번호는 6자 이상 입력해주세요.");
+    if (!resetPwValue || resetPwValue.length < 6) return showToast("비밀번호는 6자 이상 입력해주세요.", "error");
     setSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -2121,39 +2121,45 @@ export default function App() {
   // ── DB에서 거래처 + 상담기록 전부 읽어오기 ──
   const fetchClients = useCallback(async () => {
     setLoading(true);
-    // 거래처 가져오기
-    const { data: clientRows, error: clientErr } = await supabase
-      .from("clients")
-      .select("*")
-      .order("created_at", { ascending: false });
+    try {
+      // 거래처 가져오기
+      const { data: clientRows, error: clientErr } = await supabase
+        .from("clients")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    if (clientErr) {
-      console.error("거래처 로딩 실패:", clientErr);
-      showToast("거래처 데이터를 불러오지 못했습니다.", "error");
+      if (clientErr) {
+        console.error("거래처 로딩 실패:", clientErr);
+        showToast("거래처 데이터를 불러오지 못했습니다.", "error");
+        setLoading(false);
+        return;
+      }
+
+      // 상담 기록 가져오기
+      const { data: recordRows, error: recordErr } = await supabase
+        .from("records")
+        .select("*")
+        .order("date", { ascending: false });
+
+      if (recordErr) {
+        console.error("상담기록 로딩 실패:", recordErr);
+      }
+
+      // 거래처별로 기록 묶기
+      const recordsByClient = {};
+      (recordRows || []).forEach(r => {
+        if (!recordsByClient[r.client_id]) recordsByClient[r.client_id] = [];
+        recordsByClient[r.client_id].push(r);
+      });
+
+      const merged = (clientRows || []).map(row => dbToClient(row, recordsByClient[row.id] || []));
+      setClients(merged);
+    } catch (err) {
+      console.error("네트워크 오류:", err);
+      showToast("네트워크 연결을 확인해주세요.", "error");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // 상담 기록 가져오기
-    const { data: recordRows, error: recordErr } = await supabase
-      .from("records")
-      .select("*")
-      .order("date", { ascending: false });
-
-    if (recordErr) {
-      console.error("상담기록 로딩 실패:", recordErr);
-    }
-
-    // 거래처별로 기록 묶기
-    const recordsByClient = {};
-    (recordRows || []).forEach(r => {
-      if (!recordsByClient[r.client_id]) recordsByClient[r.client_id] = [];
-      recordsByClient[r.client_id].push(r);
-    });
-
-    const merged = (clientRows || []).map(row => dbToClient(row, recordsByClient[row.id] || []));
-    setClients(merged);
-    setLoading(false);
   }, []);
 
   // ── 로그인 후 데이터 불러오기 ──
@@ -2167,131 +2173,156 @@ export default function App() {
   // ── 거래처 추가 (DB에 저장) ──
   const handleAddClient = async (formData) => {
     setSaving(true);
-    const dbData = clientToDb(formData);
-    dbData.registered_at = new Date().toISOString().split("T")[0];
+    try {
+      const dbData = clientToDb(formData);
+      dbData.registered_at = new Date().toISOString().split("T")[0];
 
-    const { data, error } = await supabase
-      .from("clients")
-      .insert([dbData])
-      .select()
-      .single();
+      const { data, error } = await supabase
+        .from("clients")
+        .insert([dbData])
+        .select()
+        .single();
 
-    if (error) {
-      console.error("거래처 추가 실패:", error);
-      showToast("거래처 추가에 실패했습니다.", "error");
+      if (error) {
+        console.error("거래처 추가 실패:", error);
+        showToast("거래처 추가에 실패했습니다.", "error");
+        return;
+      }
+
+      // 새 거래처를 목록 맨 앞에 추가 (새로고침 없이)
+      const newClient = dbToClient(data, []);
+      setClients(prev => [newClient, ...prev]);
+      setShowAddModal(false);
+      showToast(`"${data.name}" 거래처가 추가되었습니다.`);
+    } catch (err) {
+      console.error("네트워크 오류:", err);
+      showToast("네트워크 연결을 확인해주세요.", "error");
+    } finally {
       setSaving(false);
-      return;
     }
-
-    // 새 거래처를 목록 맨 앞에 추가 (새로고침 없이)
-    const newClient = dbToClient(data, []);
-    setClients(prev => [newClient, ...prev]);
-    setShowAddModal(false);
-    showToast(`"${data.name}" 거래처가 추가되었습니다.`);
-    setSaving(false);
   };
 
   // ── 거래처 수정 (DB에 저장) ──
   const handleUpdateClient = async (id, editData) => {
-    const dbData = clientToDb(editData);
+    try {
+      const dbData = clientToDb(editData);
 
-    const { data, error } = await supabase
-      .from("clients")
-      .update(dbData)
-      .eq("id", id)
-      .select()
-      .single();
+      const { data, error } = await supabase
+        .from("clients")
+        .update(dbData)
+        .eq("id", id)
+        .select()
+        .single();
 
-    if (error) {
-      console.error("거래처 수정 실패:", error);
-      showToast("거래처 수정에 실패했습니다.", "error");
-      return;
+      if (error) {
+        console.error("거래처 수정 실패:", error);
+        showToast("거래처 수정에 실패했습니다.", "error");
+        return;
+      }
+
+      // 화면 즉시 반영 (새로고침 없이)
+      setClients(prev => prev.map(c => {
+        if (c.id !== id) return c;
+        return dbToClient(data, c.records.map(r => ({
+          id: r.id, client_id: id, date: r.date, type: r.type, content: r.content
+        })));
+      }));
+      showToast("거래처 정보가 수정되었습니다.");
+    } catch (err) {
+      console.error("네트워크 오류:", err);
+      showToast("네트워크 연결을 확인해주세요.", "error");
     }
-
-    // 화면 즉시 반영 (새로고침 없이)
-    setClients(prev => prev.map(c => {
-      if (c.id !== id) return c;
-      return dbToClient(data, c.records.map(r => ({
-        id: r.id, client_id: id, date: r.date, type: r.type, content: r.content
-      })));
-    }));
-    showToast("거래처 정보가 수정되었습니다.");
   };
 
   // ── 상담 기록 추가 (DB에 저장) ──
   const handleAddRecord = async (clientId, recordData) => {
-    const { data, error } = await supabase
-      .from("records")
-      .insert([{
-        client_id: clientId,
-        date: recordData.date,
-        type: recordData.type,
-        content: recordData.content,
-      }])
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("records")
+        .insert([{
+          client_id: clientId,
+          date: recordData.date,
+          type: recordData.type,
+          content: recordData.content,
+        }])
+        .select()
+        .single();
 
-    if (error) {
-      console.error("기록 추가 실패:", error);
-      showToast("상담 기록 추가에 실패했습니다.", "error");
-      return;
+      if (error) {
+        console.error("기록 추가 실패:", error);
+        showToast("상담 기록 추가에 실패했습니다.", "error");
+        return;
+      }
+
+      // 화면 즉시 반영
+      const newRecord = { id: data.id, date: data.date, type: data.type, content: data.content };
+      setClients(prev => prev.map(c => {
+        if (c.id !== clientId) return c;
+        return { ...c, records: [newRecord, ...c.records] };
+      }));
+      showToast("상담 기록이 추가되었습니다.");
+    } catch (err) {
+      console.error("네트워크 오류:", err);
+      showToast("네트워크 연결을 확인해주세요.", "error");
     }
-
-    // 화면 즉시 반영
-    const newRecord = { id: data.id, date: data.date, type: data.type, content: data.content };
-    setClients(prev => prev.map(c => {
-      if (c.id !== clientId) return c;
-      return { ...c, records: [newRecord, ...c.records] };
-    }));
-    showToast("상담 기록이 추가되었습니다.");
   };
 
   // ── 상담 기록 수정 (DB에 저장) ──
   const handleUpdateRecord = async (clientId, recordId, updatedData) => {
-    const { data, error } = await supabase
-      .from("records")
-      .update({
-        date: updatedData.date,
-        type: updatedData.type,
-        content: updatedData.content,
-      })
-      .eq("id", recordId)
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("records")
+        .update({
+          date: updatedData.date,
+          type: updatedData.type,
+          content: updatedData.content,
+        })
+        .eq("id", recordId)
+        .select()
+        .single();
 
-    if (error) {
-      console.error("기록 수정 실패:", error);
-      showToast("상담 기록 수정에 실패했습니다.", "error");
-      return;
+      if (error) {
+        console.error("기록 수정 실패:", error);
+        showToast("상담 기록 수정에 실패했습니다.", "error");
+        return;
+      }
+
+      // 화면 즉시 반영
+      setClients(prev => prev.map(c => {
+        if (c.id !== clientId) return c;
+        return {
+          ...c,
+          records: c.records.map(r => r.id === recordId ? { id: data.id, date: data.date, type: data.type, content: data.content } : r),
+        };
+      }));
+      showToast("상담 기록이 수정되었습니다.");
+    } catch (err) {
+      console.error("네트워크 오류:", err);
+      showToast("네트워크 연결을 확인해주세요.", "error");
     }
-
-    // 화면 즉시 반영
-    setClients(prev => prev.map(c => {
-      if (c.id !== clientId) return c;
-      return {
-        ...c,
-        records: c.records.map(r => r.id === recordId ? { id: data.id, date: data.date, type: data.type, content: data.content } : r),
-      };
-    }));
-    showToast("상담 기록이 수정되었습니다.");
   };
 
   // ── 거래처 삭제 (DB에서 삭제) ──
   const handleDeleteClient = async (id) => {
-    const { error } = await supabase
-      .from("clients")
-      .delete()
-      .eq("id", id);
+    try {
+      const { error } = await supabase
+        .from("clients")
+        .delete()
+        .eq("id", id);
 
-    if (error) {
-      console.error("거래처 삭제 실패:", error);
-      showToast("거래처 삭제에 실패했습니다.", "error");
-      return;
+      if (error) {
+        console.error("거래처 삭제 실패:", error);
+        showToast("거래처 삭제에 실패했습니다.", "error");
+        return;
+      }
+
+      setClients(prev => prev.filter(c => c.id !== id));
+      setView("list");
+      showToast("거래처가 삭제되었습니다.");
+    } catch (err) {
+      console.error("네트워크 오류:", err);
+      showToast("네트워크 연결을 확인해주세요.", "error");
     }
-
-    setClients(prev => prev.filter(c => c.id !== id));
-    setView("list");
-    showToast("거래처가 삭제되었습니다.");
   };
 
   // ── 본인 비밀번호 변경 ──
@@ -2299,14 +2330,19 @@ export default function App() {
   const [myNewPassword, setMyNewPassword] = useState("");
 
   const handleResetMyPassword = async () => {
-    if (!myNewPassword || myNewPassword.length < 6) return alert("비밀번호는 6자 이상 입력해주세요.");
-    const { error } = await supabase.auth.updateUser({ password: myNewPassword });
-    if (error) {
-      showToast("비밀번호 변경에 실패했습니다.", "error");
-    } else {
-      showToast("비밀번호가 변경되었습니다.");
-      setShowMyPwReset(false);
-      setMyNewPassword("");
+    if (!myNewPassword || myNewPassword.length < 6) return showToast("비밀번호는 6자 이상 입력해주세요.", "error");
+    try {
+      const { error } = await supabase.auth.updateUser({ password: myNewPassword });
+      if (error) {
+        showToast("비밀번호 변경에 실패했습니다.", "error");
+      } else {
+        showToast("비밀번호가 변경되었습니다.");
+        setShowMyPwReset(false);
+        setMyNewPassword("");
+      }
+    } catch (err) {
+      console.error("네트워크 오류:", err);
+      showToast("네트워크 연결을 확인해주세요.", "error");
     }
   };
 
@@ -2525,14 +2561,14 @@ export default function App() {
           <>
             {view === "dashboard" && <Dashboard clients={clients} onNavigate={navigate} />}
             {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} onExport={handleExport} onImport={handleImport} />}
-            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} userRole={userRole} />}
+            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} userRole={userRole} showToast={showToast} />}
             {view === "staff" && userRole === "admin" && <StaffManagement showToast={showToast} />}
           </>
         )}
       </div>
 
       {/* 거래처 추가 모달 */}
-      {showAddModal && <AddClientModal onClose={() => setShowAddModal(false)} onSave={handleAddClient} saving={saving} />}
+      {showAddModal && <AddClientModal onClose={() => setShowAddModal(false)} onSave={handleAddClient} saving={saving} showToast={showToast} />}
 
       {/* Excel 가져오기 에러 팝업 */}
       {importErrors && (
