@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.1";
+const APP_VERSION = "v1.1.2";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1786,41 +1786,38 @@ function StaffManagement({ showToast }) {
     if (newStaff.password.length < 6) return showToast("비밀번호는 6자 이상이어야 합니다.", "error");
     setSaving(true);
 
-    // Supabase Auth로 회원가입
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: newStaff.email,
-      password: newStaff.password,
-    });
-
-    if (authError) {
-      console.error("직원 추가 실패:", authError);
-      showToast("직원 추가 실패: " + authError.message, "error");
-      setSaving(false);
-      return;
-    }
-
-    // profiles에 직접 INSERT (handle_new_user 트리거가 없으므로)
-    if (authData.user) {
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .insert([{
-          id: authData.user.id,
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+          "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
           email: newStaff.email,
-          name: newStaff.name || newStaff.email.split("@")[0],
+          password: newStaff.password,
+          name: newStaff.name,
           role: newStaff.role,
-          is_active: true,
-        }]);
+        }),
+      });
+      const result = await res.json();
 
-      if (profileError) {
-        console.error("프로필 생성 실패:", profileError);
+      if (!result.success) {
+        showToast(result.error || "직원 추가에 실패했습니다.", "error");
+        setSaving(false);
+        return;
       }
-    }
 
-    showToast(`"${newStaff.email}" 직원이 추가되었습니다.`);
-    setNewStaff({ email: "", password: "", name: "", role: "staff" });
-    setShowAddForm(false);
+      showToast(`"${newStaff.email}" 직원이 추가되었습니다.`);
+      setNewStaff({ email: "", password: "", name: "", role: "staff" });
+      setShowAddForm(false);
+      fetchStaff();
+    } catch (err) {
+      showToast("네트워크 연결을 확인해주세요.", "error");
+    }
     setSaving(false);
-    fetchStaff();
   };
 
   // ── 활성화/비활성화 토글 ──
