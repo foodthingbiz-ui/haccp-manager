@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.0";
+const APP_VERSION = "v1.1.1";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -573,11 +573,13 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
     setSaving(true);
     const cf = editData.consultType === "정기 사후관리" ? 0 : (Number(editData.consultFee) || 0);
     const mf = ["신규인증", "단기 사후관리", "연장심사"].includes(editData.consultType) ? 0 : (Number(editData.maintenanceFee) || 0);
-    const autoStatus = (cf > 0 || mf > 0) ? "계약완료" : "상담중";
+    // 상태 자동 변경은 "상담중 → 계약완료" 승격만 허용 (진행중/완료는 유지)
+    let newStatus = editData.status || client.status;
+    if (newStatus === "상담중" && (cf > 0 || mf > 0)) newStatus = "계약완료";
     await onUpdate(client.id, {
       ...editData,
       type: (editData.bizTypes || []).map(bt => bt.type).filter(Boolean).join(", "),
-      status: autoStatus,
+      status: newStatus,
       consultFee: cf,
       maintenanceFee: mf,
     });
@@ -841,6 +843,12 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
                       </button>
                     ))}
                   </div>
+                </div>
+                <div style={{ marginTop: "12px" }}>
+                  <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>진행 상태</label>
+                  <select value={editData.status} onChange={e => setEditData({ ...editData, status: e.target.value })} style={{ ...inputStyle, appearance: "auto" }}>
+                    {Object.keys(STATUS_CONFIG).map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
                   <div>
