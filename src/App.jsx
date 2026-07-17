@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.2";
+const APP_VERSION = "v1.1.3";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1788,7 +1788,7 @@ function StaffManagement({ showToast }) {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff`, {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rapid-responder`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
