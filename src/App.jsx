@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.6";
+const APP_VERSION = "v1.1.7";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -179,18 +179,21 @@ function Toast({ message, type = "success", onClose }) {
 }
 
 // ─── 배지 컴포넌트 ───
-function StatusBadge({ status, size = "md" }) {
-  const cfg = STATUS_CONFIG[status] || { color: "#6b7280", bg: "#f3f4f6", icon: "?" };
+// 공용 배지: 설정표(config)에서 라벨에 맞는 색/아이콘을 찾아 그림
+function Badge({ label, config, size = "md" }) {
+  const cfg = config[label] || { color: "#6b7280", bg: "#f3f4f6", icon: "?" };
   const pad = size === "sm" ? "2px 8px" : "4px 14px";
   const fs = size === "sm" ? "12px" : "13px";
-  return <span style={{ background: cfg.bg, color: cfg.color, padding: pad, borderRadius: "20px", fontSize: fs, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px", border: `1px solid ${cfg.color}22` }}><span>{cfg.icon}</span> {status}</span>;
+  return <span style={{ background: cfg.bg, color: cfg.color, padding: pad, borderRadius: "20px", fontSize: fs, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px", border: `1px solid ${cfg.color}22` }}><span>{cfg.icon}</span> {label}</span>;
 }
 
-function ConsultBadge({ consultType, size = "md" }) {
-  const cfg = CONSULT_TYPES[consultType] || { color: "#6b7280", bg: "#f3f4f6", icon: "?" };
-  const pad = size === "sm" ? "2px 8px" : "4px 14px";
-  const fs = size === "sm" ? "12px" : "13px";
-  return <span style={{ background: cfg.bg, color: cfg.color, padding: pad, borderRadius: "20px", fontSize: fs, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px", border: `1px solid ${cfg.color}22` }}><span>{cfg.icon}</span> {consultType}</span>;
+// 기존 이름 유지 — 나머지 코드는 수정할 필요 없음
+function StatusBadge({ status, size }) {
+  return <Badge label={status} config={STATUS_CONFIG} size={size} />;
+}
+
+function ConsultBadge({ consultType, size }) {
+  return <Badge label={consultType} config={CONSULT_TYPES} size={size} />;
 }
 
 // ─── D-Day 계산 함수 ───
