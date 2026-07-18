@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.4";
+const APP_VERSION = "v1.1.5";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1148,6 +1148,17 @@ function HaccpManagement({ clientId, showToast }) {
     setSaving(true);
     const allFiles = [...editData.files];
 
+    // 수정 중 제거된 기존 파일들을 창고에서도 삭제
+    const original = records.find(r => r.id === editingId);
+    if (original) {
+      const originalPaths = parseFiles(original.file_url, original.file_name).map(f => f.path);
+      const keptPaths = new Set(editData.files.map(f => f.path));
+      const removedPaths = originalPaths.filter(p => p && !keptPaths.has(p) && !p.startsWith("http"));
+      if (removedPaths.length > 0) {
+        await supabase.storage.from("haccp-files").remove(removedPaths);
+      }
+    }
+
     // 새 파일 업로드
     for (const f of editNewFiles) {
       const ext = f.name.split(".").pop();
@@ -1189,9 +1200,18 @@ function HaccpManagement({ clientId, showToast }) {
 
   // ── 기록 삭제 ──
   const deleteRecord = async (id) => {
-    if (!window.confirm("이 기록을 삭제하시겠습니까?\n첨부파일 정보도 함께 삭제되며, 되돌릴 수 없습니다.")) return;
+    if (!window.confirm("이 기록을 삭제하시겠습니까?\n첨부파일도 함께 삭제되며, 되돌릴 수 없습니다.")) return;
+
+    // 삭제 전에 이 기록의 첨부파일 경로들을 파악
+    const target = records.find(r => r.id === id);
+    const filePaths = target ? parseFiles(target.file_url, target.file_name).map(f => f.path).filter(p => p && !p.startsWith("http")) : [];
+
     const { error } = await supabase.from("haccp_records").delete().eq("id", id);
     if (!error) {
+      // 창고(Storage)의 실제 파일도 삭제
+      if (filePaths.length > 0) {
+        await supabase.storage.from("haccp-files").remove(filePaths);
+      }
       setRecords(prev => prev.filter(r => r.id !== id));
       showToast("기록이 삭제되었습니다.");
     } else {
