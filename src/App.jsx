@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.3";
+const APP_VERSION = "v1.1.4";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1189,8 +1189,14 @@ function HaccpManagement({ clientId, showToast }) {
 
   // ── 기록 삭제 ──
   const deleteRecord = async (id) => {
+    if (!window.confirm("이 기록을 삭제하시겠습니까?\n첨부파일 정보도 함께 삭제되며, 되돌릴 수 없습니다.")) return;
     const { error } = await supabase.from("haccp_records").delete().eq("id", id);
-    if (!error) setRecords(prev => prev.filter(r => r.id !== id));
+    if (!error) {
+      setRecords(prev => prev.filter(r => r.id !== id));
+      showToast("기록이 삭제되었습니다.");
+    } else {
+      showToast("기록 삭제에 실패했습니다.", "error");
+    }
   };
 
   // ── 수질검사 타입 설정 ──
@@ -2417,6 +2423,10 @@ export default function App() {
       const errors = [];
       const validConsultTypes = ["신규인증", "정기 사후관리", "단기 사후관리", "연장심사"];
 
+      // 중복 방지: 이미 등록된 업체명/사업자번호 대조표
+      const existingNames = new Set(clients.map(c => (c.name || "").trim()));
+      const existingBizNums = new Set(clients.map(c => (c.bizNumber || "").trim()).filter(Boolean));
+      const seenInFile = new Set();
       for (let i = 0; i < filtered.length; i++) {
         const row = filtered[i];
         const rowNum = i + 1;
@@ -2444,7 +2454,16 @@ export default function App() {
           errors.push({ row: rowNum, name: name || "(이름 없음)", issues: rowErrors });
           continue;
         }
-
+        const dupBizNum = String(row["사업자등록번호"] || row["biz_number"] || "").trim();
+        if (existingNames.has(name) || (dupBizNum && existingBizNums.has(dupBizNum))) {
+          errors.push({ row: rowNum, name, issues: ["이미 등록된 거래처입니다 (건너뜀)"] });
+          continue;
+        }
+        if (seenInFile.has(name)) {
+          errors.push({ row: rowNum, name, issues: ["파일 안에 같은 업체명이 중복되어 있습니다 (건너뜀)"] });
+          continue;
+        }
+        seenInFile.add(name);
         const types = String(row["업종"] || row["type"] || "").split(" / ").filter(Boolean);
         const licenses = String(row["인허가번호"] || "").split(" / ").filter(Boolean);
         const categories = String(row["유형"] || "").split(" / ").filter(Boolean);
