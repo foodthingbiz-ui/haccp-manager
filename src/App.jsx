@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.7";
+const APP_VERSION = "v1.1.8";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -194,6 +194,21 @@ function StatusBadge({ status, size }) {
 
 function ConsultBadge({ consultType, size }) {
   return <Badge label={consultType} config={CONSULT_TYPES} size={size} />;
+}
+// 공용 입력 필드: 라벨 + 입력창 세트
+// type: "text"(기본), "password", "email", "date", "number" 등
+// textarea={true}면 여러 줄 입력창, rows로 줄 수 지정
+function Field({ label, value, onChange, type = "text", placeholder = "", textarea = false, rows = 3, disabled = false }) {
+  return (
+    <div>
+      <label style={{ fontSize: "12px", color: disabled ? "#cbd5e1" : "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>{label}</label>
+      {textarea ? (
+        <textarea value={value} onChange={onChange} rows={rows} placeholder={placeholder} style={{ ...inputStyle, resize: "vertical" }} />
+      ) : (
+        <input type={type} value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} style={{ ...inputStyle, background: disabled ? "#f8fafc" : "white", color: disabled ? "#cbd5e1" : "#1a1a2e" }} />
+      )}
+    </div>
+  );
 }
 
 // ─── D-Day 계산 함수 ───
@@ -1949,19 +1964,9 @@ function StaffManagement({ showToast }) {
       {showAddForm && (
         <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
           <div style={{ display: "grid", gap: "12px" }}>
-            <div>
-              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>이름</label>
-              <input value={newStaff.name} onChange={e => setNewStaff({ ...newStaff, name: e.target.value })} style={inputStyle} placeholder="직원 이름" />
-            </div>
-            <div>
-              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>이메일 *</label>
-              <input type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} style={inputStyle} placeholder="이메일 주소" />
-            </div>
-            <div>
-              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>비밀번호 * (6자 이상)</label>
-              <input type="password" value={newStaff.password} onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} style={inputStyle} placeholder="초기 비밀번호" />
-            </div>
-            <div>
+           <Field label="이름" value={newStaff.name} onChange={e => setNewStaff({ ...newStaff, name: e.target.value })} placeholder="직원 이름" />
+            <Field label="이메일 *" type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="이메일 주소" />
+            <Field label="비밀번호 * (6자 이상)" type="password" value={newStaff.password} onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} placeholder="초기 비밀번호" />
               <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>역할</label>
               <div style={{ display: "flex", gap: "8px" }}>
                 {[["admin", "관리자"], ["staff", "일반 직원"]].map(([val, label]) => (
