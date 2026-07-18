@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.9";
+const APP_VERSION = "v1.1.10";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1972,9 +1972,10 @@ function StaffManagement({ showToast }) {
       {showAddForm && (
         <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
           <div style={{ display: "grid", gap: "12px" }}>
-           <Field label="이름" value={newStaff.name} onChange={e => setNewStaff({ ...newStaff, name: e.target.value })} placeholder="직원 이름" />
+            <Field label="이름" value={newStaff.name} onChange={e => setNewStaff({ ...newStaff, name: e.target.value })} placeholder="직원 이름" />
             <Field label="이메일 *" type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="이메일 주소" />
             <Field label="비밀번호 * (6자 이상)" type="password" value={newStaff.password} onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} placeholder="초기 비밀번호" />
+            <div>
               <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>역할</label>
               <div style={{ display: "flex", gap: "8px" }}>
                 {[["admin", "관리자"], ["staff", "일반 직원"]].map(([val, label]) => (
@@ -1986,7 +1987,6 @@ function StaffManagement({ showToast }) {
           </div>
         </div>
       )}
-
       {/* 활성 직원 목록 */}
       <div style={{ marginBottom: "24px" }}>
         <h3 style={{ fontSize: "15px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 12px 0" }}>활성 직원</h3>
