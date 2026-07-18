@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.8";
+const APP_VERSION = "v1.1.9";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1033,6 +1033,7 @@ function HaccpManagement({ clientId, showToast }) {
   const [waterConfig, setWaterConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [openCategory, setOpenCategory] = useState(null);
+  const [showInputForm, setShowInputForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({ item_name: "", record_date: "", memo: "", files: [] });
@@ -1264,7 +1265,7 @@ function HaccpManagement({ clientId, showToast }) {
           return (
             <div key={cat.key} style={{ background: "white", borderRadius: "14px", border: isOpen ? "2px solid #1a1a2e" : "1px solid #e8ecf2", overflow: "hidden" }}>
               {/* 카테고리 헤더 */}
-              <div onClick={() => setOpenCategory(isOpen ? null : cat.key)} style={{ padding: "16px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: "10px" }}>
+              <div onClick={() => { setOpenCategory(isOpen ? null : cat.key); setShowInputForm(false); }} style={{ padding: "16px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: "10px" }}>
                 <span style={{ fontSize: "18px" }}>{cat.icon}</span>
                 <span style={{ fontSize: "14px", fontWeight: 700, color: "#1a1a2e", flex: 1 }}>{cat.label}</span>
                 <span style={{ fontSize: "12px", color: "#94a3b8", background: "#f1f5f9", padding: "2px 10px", borderRadius: "10px" }}>{catRecords.length}건</span>
@@ -1289,9 +1290,16 @@ function HaccpManagement({ clientId, showToast }) {
                     </div>
                   )}
 
-                  {/* 기록 추가 폼 */}
+{/* 기록 추가: 정보입력 버튼을 누르면 입력폼 표시 */}
                   {!(cat.key === "water_test" && (waterConfig?.water_type || "상수도") === "상수도") && (
-                    <HaccpRecordForm category={cat.key} onAdd={addRecord} saving={saving} inputStyle={inputStyle} showToast={showToast} />
+                    <div style={{ marginTop: "12px" }}>
+                      <button onClick={() => setShowInputForm(!showInputForm)} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: showInputForm ? "1px solid #e2e8f0" : "none", background: showInputForm ? "white" : "#1a1a2e", color: showInputForm ? "#64748b" : "white", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+                        {showInputForm ? "취소" : "+ 정보입력"}
+                      </button>
+                      {showInputForm && (
+                        <HaccpRecordForm category={cat.key} onAdd={async (...args) => { const ok = await addRecord(...args); if (ok) setShowInputForm(false); return ok; }} saving={saving} inputStyle={inputStyle} showToast={showToast} />
+                      )}
+                    </div>
                   )}
 
                   {/* 기록 목록 */}
