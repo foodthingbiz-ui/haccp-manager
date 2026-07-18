@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.5";
+const APP_VERSION = "v1.1.6";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -24,6 +24,8 @@ const CONSULT_TYPES = {
 };
 
 const RECORD_TYPES = { "방문": "🏢", "상담": "💬", "전화": "📞" };
+// 공용 입력창 스타일 (전 컴포넌트 공통)
+const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 
 const RENEWAL_PERIODS = { "1m": "1개월 후", "3m": "3개월 후", "6m": "6개월 후", "1y": "1년 후" };
 const ALERT_TIMINGS = { "1d": "1일 전", "1w": "1주일 전", "15d": "15일 전", "1m": "1개월 전" };
@@ -613,7 +615,6 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
     { key: "contract", label: "계약/매출", icon: "💰" },
   ];
 
-  const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 
   return (
     <div>
@@ -1230,7 +1231,6 @@ function HaccpManagement({ clientId, showToast }) {
     }
   };
 
-  const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 
   if (loading) return <LoadingSpinner message="HACCP 데이터 로딩 중..." />;
 
@@ -1606,8 +1606,6 @@ function AddClientModal({ onClose, onSave, saving, showToast }) {
     certified: false, certifiedDate: "",
     memo: "",
   });
-  const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
-
   const isMaintenanceOnly = form.consultType === "정기 사후관리";
   const isConsultOnly = ["신규인증", "단기 사후관리", "연장심사"].includes(form.consultType);
 
@@ -1789,8 +1787,6 @@ function StaffManagement({ showToast }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newStaff, setNewStaff] = useState({ email: "", password: "", name: "", role: "staff" });
   const [saving, setSaving] = useState(false);
-
-  const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 
   // ── 직원 목록 불러오기 ──
   const fetchStaff = useCallback(async () => {
