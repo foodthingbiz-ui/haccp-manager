@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.5.0";
+const APP_VERSION = "v1.6.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -733,6 +733,24 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 핵심 정보 요약 카드 — 어느 탭에서든 상시 표시 */}
+      <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e8ecf2", padding: "16px 20px", marginBottom: "16px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px 24px" }}>
+        {[
+          ["담당자", client.contact ? `${client.contact} · ${client.phone || "-"}` : "-", "👤"],
+          ["대표자", client.ceoName ? `${client.ceoName} · ${client.ceoPhone || "-"}` : "-", "👑"],
+          ["사업자등록번호", client.bizNumber || "-", "📄"],
+          ["주소", client.address || "-", "📍"],
+        ].map(([label, value, icon]) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+            <span style={{ fontSize: "18px", flexShrink: 0 }}>{icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600 }}>{label}</div>
+              <div style={{ fontSize: "13px", color: "#1a1a2e", fontWeight: 500, marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={value}>{value}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       <div style={{ display: "flex", gap: "4px", marginBottom: "24px", background: "#f1f5f9", borderRadius: "14px", padding: "4px" }}>
