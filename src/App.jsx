@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.3.0";
+const APP_VERSION = "v1.4.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -475,22 +475,64 @@ function Dashboard({ clients, onNavigate }) {
 }
 
 // ─── 거래처 목록 ───
+// ─── 거래처 목록 (테이블 뷰) ───
 function ClientList({ clients, onNavigate, onAdd, onExport, onImport }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("전체");
   const [filterConsultType, setFilterConsultType] = useState("전체");
+  const [sortKey, setSortKey] = useState("registeredAt");
+  const [sortOrder, setSortOrder] = useState("desc"); // asc / desc
 
+  // 필터 + 정렬
   const filtered = useMemo(() => {
-    return clients.filter(c => {
+    const list = clients.filter(c => {
       const matchSearch = !search || c.name.includes(search) || c.contact.includes(search) || c.phone.includes(search) || c.type.includes(search);
       const matchStatus = filterStatus === "전체" || c.status === filterStatus;
       const matchConsultType = filterConsultType === "전체" || c.consultType === filterConsultType;
       return matchSearch && matchStatus && matchConsultType;
     });
-  }, [clients, search, filterStatus, filterConsultType]);
+
+    // 정렬
+    return [...list].sort((a, b) => {
+      let av, bv;
+      if (sortKey === "totalFee") {
+        av = (a.consultFee || 0) + (a.maintenanceFee || 0);
+        bv = (b.consultFee || 0) + (b.maintenanceFee || 0);
+      } else {
+        av = a[sortKey] || "";
+        bv = b[sortKey] || "";
+      }
+      if (typeof av === "number" && typeof bv === "number") {
+        return sortOrder === "asc" ? av - bv : bv - av;
+      }
+      return sortOrder === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+    });
+  }, [clients, search, filterStatus, filterConsultType, sortKey, sortOrder]);
+
+  // 정렬 헤더 클릭 처리
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortOrder("asc");
+    }
+  };
+
+  // 정렬 표시자
+  const sortIcon = (key) => {
+    if (sortKey !== key) return <span style={{ color: "#cbd5e1", fontSize: "10px", marginLeft: "4px" }}>▲▼</span>;
+    return <span style={{ color: "#1a1a2e", fontSize: "10px", marginLeft: "4px" }}>{sortOrder === "asc" ? "▲" : "▼"}</span>;
+  };
+
+  // 테이블 헤더 셀 스타일
+  const thStyle = { padding: "12px 14px", textAlign: "left", fontSize: "12px", fontWeight: 700, color: "#64748b", background: "#f8fafc", borderBottom: "2px solid #e8ecf2", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" };
+  const thStaticStyle = { ...thStyle, cursor: "default" };
+  const tdStyle = { padding: "14px", fontSize: "13px", color: "#1a1a2e", borderBottom: "1px solid #f1f5f9", verticalAlign: "middle" };
 
   return (
     <div>
+      {/* 헤더 영역: 제목 + 액션 버튼 */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>거래처 목록</h2>
@@ -507,56 +549,84 @@ function ClientList({ clients, onNavigate, onAdd, onExport, onImport }) {
           </button>
         </div>
       </div>
-      <div style={{ position: "relative", marginBottom: "14px" }}>
-        <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "16px", color: "#94a3b8" }}>🔍</span>
-        <input type="text" placeholder="거래처명, 담당자, 연락처 검색..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: "100%", padding: "12px 12px 12px 40px", border: "1px solid #e2e8f0", borderRadius: "12px", fontSize: "14px", outline: "none", background: "white", boxSizing: "border-box" }} onFocus={e => e.target.style.borderColor = "#1a1a2e"} onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
-      </div>
-      <div style={{ marginBottom: "10px" }}>
-        <div style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 600, marginBottom: "6px" }}>진행 상태</div>
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-          {["전체", ...Object.keys(STATUS_CONFIG)].map(s => (
-            <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "6px 14px", borderRadius: "10px", border: filterStatus === s ? "2px solid #1a1a2e" : "1px solid #e2e8f0", background: filterStatus === s ? "#1a1a2e" : "white", color: filterStatus === s ? "white" : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{s}</button>
-          ))}
+
+      {/* 검색 + 필터 통합 영역 */}
+      <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e8ecf2", padding: "16px 20px", marginBottom: "16px" }}>
+        {/* 검색창 */}
+        <div style={{ position: "relative", marginBottom: "14px" }}>
+          <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "16px", color: "#94a3b8" }}>🔍</span>
+          <input type="text" placeholder="거래처명, 담당자, 연락처, 업종 검색..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: "100%", padding: "10px 12px 10px 40px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", background: "white", boxSizing: "border-box" }} onFocus={e => e.target.style.borderColor = "#1a1a2e"} onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
         </div>
-      </div>
-      <div style={{ marginBottom: "18px" }}>
-        <div style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 600, marginBottom: "6px" }}>컨설팅 종류</div>
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-          {["전체", ...Object.keys(CONSULT_TYPES)].map(ct => {
-            const cfg = CONSULT_TYPES[ct];
-            const isActive = filterConsultType === ct;
-            return (
-              <button key={ct} onClick={() => setFilterConsultType(ct)} style={{ padding: "6px 14px", borderRadius: "10px", border: isActive ? `2px solid ${cfg ? cfg.color : "#1a1a2e"}` : "1px solid #e2e8f0", background: isActive ? (cfg ? cfg.bg : "#1a1a2e") : "white", color: isActive ? (cfg ? cfg.color : "white") : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
-                {cfg ? cfg.icon + " " : ""}{ct}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        {filtered.map(c => (
-          <div key={c.id} onClick={() => onNavigate("detail", c.id)} style={{ background: "white", borderRadius: "14px", border: "1px solid #e8ecf2", padding: "18px 20px", cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.06)"; e.currentTarget.style.transform = "translateY(-1px)"; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "none"; }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-              <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "16px", flexShrink: 0 }}>{c.name[0]}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: "15px", fontWeight: 700, color: "#1a1a2e" }}>{c.name}</span>
-                  <StatusBadge status={c.status} size="sm" />
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px", flexWrap: "wrap" }}>
-                  <ConsultBadge consultType={c.consultType} size="sm" />
-                  <span style={{ fontSize: "12px", color: "#94a3b8" }}>{c.contact} · {c.phone}</span>
-                </div>
-              </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                {(c.consultFee + c.maintenanceFee) > 0 && <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f766e" }}>{formatMoney(c.consultFee + c.maintenanceFee)}</div>}
-                <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>{c.type}</div>
-              </div>
+
+        {/* 필터 영역: 좌우 배치 */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+          <div>
+            <div style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 600, marginBottom: "6px" }}>진행 상태</div>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {["전체", ...Object.keys(STATUS_CONFIG)].map(s => (
+                <button key={s} onClick={() => setFilterStatus(s)} style={{ padding: "6px 12px", borderRadius: "10px", border: filterStatus === s ? "2px solid #1a1a2e" : "1px solid #e2e8f0", background: filterStatus === s ? "#1a1a2e" : "white", color: filterStatus === s ? "white" : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{s}</button>
+              ))}
             </div>
           </div>
-        ))}
+          <div>
+            <div style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 600, marginBottom: "6px" }}>컨설팅 종류</div>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {["전체", ...Object.keys(CONSULT_TYPES)].map(ct => {
+                const cfg = CONSULT_TYPES[ct];
+                const isActive = filterConsultType === ct;
+                return (
+                  <button key={ct} onClick={() => setFilterConsultType(ct)} style={{ padding: "6px 12px", borderRadius: "10px", border: isActive ? `2px solid ${cfg ? cfg.color : "#1a1a2e"}` : "1px solid #e2e8f0", background: isActive ? (cfg ? cfg.bg : "#1a1a2e") : "white", color: isActive ? (cfg ? cfg.color : "white") : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+                    {cfg ? cfg.icon + " " : ""}{ct}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 테이블 */}
+      <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e8ecf2", overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={thStyle} onClick={() => toggleSort("name")}>업체명{sortIcon("name")}</th>
+                <th style={thStyle} onClick={() => toggleSort("consultType")}>컨설팅 종류{sortIcon("consultType")}</th>
+                <th style={thStyle} onClick={() => toggleSort("status")}>상태{sortIcon("status")}</th>
+                <th style={thStaticStyle}>담당자</th>
+                <th style={thStaticStyle}>연락처</th>
+                <th style={thStaticStyle}>업종</th>
+                <th style={{ ...thStyle, textAlign: "right" }} onClick={() => toggleSort("totalFee")}>계약금액{sortIcon("totalFee")}</th>
+                <th style={thStyle} onClick={() => toggleSort("registeredAt")}>등록일{sortIcon("registeredAt")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(c => (
+                <tr key={c.id} onClick={() => onNavigate("detail", c.id)} style={{ cursor: "pointer", transition: "background 0.1s" }} onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={e => e.currentTarget.style.background = "white"}>
+                  <td style={tdStyle}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "13px", flexShrink: 0 }}>{c.name[0]}</div>
+                      <span style={{ fontWeight: 600 }}>{c.name}</span>
+                    </div>
+                  </td>
+                  <td style={tdStyle}><ConsultBadge consultType={c.consultType} size="sm" /></td>
+                  <td style={tdStyle}><StatusBadge status={c.status} size="sm" /></td>
+                  <td style={{ ...tdStyle, color: "#64748b" }}>{c.contact || "-"}</td>
+                  <td style={{ ...tdStyle, color: "#64748b" }}>{c.phone || "-"}</td>
+                  <td style={{ ...tdStyle, color: "#64748b", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.type}>{c.type || "-"}</td>
+                  <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, color: (c.consultFee + c.maintenanceFee) > 0 ? "#0f766e" : "#cbd5e1" }}>
+                    {(c.consultFee + c.maintenanceFee) > 0 ? formatMoney(c.consultFee + c.maintenanceFee) : "-"}
+                  </td>
+                  <td style={{ ...tdStyle, color: "#94a3b8", fontSize: "12px", whiteSpace: "nowrap" }}>{formatDate(c.registeredAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
         {filtered.length === 0 && (
-          <div style={{ textAlign: "center", padding: "48px 20px", color: "#94a3b8" }}>
+          <div style={{ textAlign: "center", padding: "60px 20px", color: "#94a3b8" }}>
             <div style={{ fontSize: "40px", marginBottom: "12px" }}>🔍</div>
             <div style={{ fontSize: "15px" }}>검색 결과가 없습니다</div>
           </div>
