@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.4.0";
+const APP_VERSION = "v1.5.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -761,12 +761,14 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
             <div style={{ display: "grid", gap: "0" }}>
               {/* 업체 정보 */}
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "10px 0 6px" }}>업체 정보</div>
-              {[["업체명", client.name], ["사업자등록번호", client.bizNumber], ["주소", client.address], ["인증여부", client.certified ? "인증" : "미인증"], ...(client.certified ? [["인증일자", formatDate(client.certifiedDate)]] : [])].map(([label, value]) => (
-                <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
-                  <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>{label}</span>
-                  <span style={{ fontSize: "14px", color: label === "인증여부" ? (client.certified ? "#065f46" : "#991b1b") : "#1a1a2e", fontWeight: label === "인증여부" ? 600 : 400 }}>{value || "-"}</span>
-                </div>
-              ))}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: "32px" }}>
+                {[["업체명", client.name], ["사업자등록번호", client.bizNumber], ["주소", client.address], ["인증여부", client.certified ? "인증" : "미인증"], ...(client.certified ? [["인증일자", formatDate(client.certifiedDate)]] : [])].map(([label, value]) => (
+                  <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                    <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>{label}</span>
+                    <span style={{ fontSize: "14px", color: label === "인증여부" ? (client.certified ? "#065f46" : "#991b1b") : "#1a1a2e", fontWeight: label === "인증여부" ? 600 : 400 }}>{value || "-"}</span>
+                  </div>
+                ))}
+              </div>
               {/* 업종/인허가 정보 */}
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "16px 0 6px" }}>업종 / 인허가 정보</div>
               {(client.bizTypes || []).length > 0 ? (client.bizTypes || []).map((bt, idx) => (
@@ -786,20 +788,24 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
               )) : <div style={{ padding: "8px 0", fontSize: "13px", color: "#94a3b8" }}>등록된 업종이 없습니다.</div>}
               {/* 대표자 정보 */}
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "16px 0 6px" }}>대표자 정보</div>
-              {[["대표자명", client.ceoName], ["생년월일", client.ceoBirth ? formatDate(client.ceoBirth) : ""], ["대표자 연락처", client.ceoPhone]].map(([label, value]) => (
-                <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
-                  <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>{label}</span>
-                  <span style={{ fontSize: "14px", color: "#1a1a2e" }}>{value || "-"}</span>
-                </div>
-              ))}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", columnGap: "24px" }}>
+                {[["대표자명", client.ceoName], ["생년월일", client.ceoBirth ? formatDate(client.ceoBirth) : ""], ["대표자 연락처", client.ceoPhone]].map(([label, value]) => (
+                  <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                    <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>{label}</span>
+                    <span style={{ fontSize: "14px", color: "#1a1a2e" }}>{value || "-"}</span>
+                  </div>
+                ))}
+              </div>
               {/* 담당자 정보 */}
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "16px 0 6px" }}>담당자 정보</div>
-              {[["담당자", client.contact], ["연락처", client.phone], ["이메일", client.email]].map(([label, value]) => (
-                <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
-                  <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>{label}</span>
-                  <span style={{ fontSize: "14px", color: "#1a1a2e" }}>{value || "-"}</span>
-                </div>
-              ))}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", columnGap: "24px" }}>
+                {[["담당자", client.contact], ["연락처", client.phone], ["이메일", client.email]].map(([label, value]) => (
+                  <div key={label} style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                    <span style={{ fontSize: "13px", color: "#94a3b8", width: "100px", flexShrink: 0, fontWeight: 600 }}>{label}</span>
+                    <span style={{ fontSize: "14px", color: "#1a1a2e" }}>{value || "-"}</span>
+                  </div>
+                ))}
+              </div>
               {/* 컨설팅 정보 */}
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e", padding: "16px 0 6px" }}>컨설팅 정보</div>
               <div style={{ display: "flex", gap: "12px", padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
