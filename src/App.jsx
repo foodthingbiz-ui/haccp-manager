@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.1.10";
+const APP_VERSION = "v1.2.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -2610,7 +2610,7 @@ export default function App() {
       </div>
 
       {/* 메인 콘텐츠 */}
-      <div style={{ padding: "20px 16px", maxWidth: "680px", margin: "0 auto" }}>
+      <div style={{ padding: "24px 32px", maxWidth: "1400px", margin: "0 auto" }}>
         {loading ? (
           <LoadingSpinner message="거래처 데이터를 불러오는 중..." />
         ) : (
