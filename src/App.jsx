@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.7.0";
+const APP_VERSION = "v2.0.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -537,8 +537,8 @@ function ClientList({ clients, onNavigate, onAdd, onExport, onImport, searchInpu
     return <span style={{ color: "#1a1a2e", fontSize: "10px", marginLeft: "4px" }}>{sortOrder === "asc" ? "▲" : "▼"}</span>;
   };
 
-  // 테이블 헤더 셀 스타일
-  const thStyle = { padding: "12px 14px", textAlign: "left", fontSize: "12px", fontWeight: 700, color: "#64748b", background: "#f8fafc", borderBottom: "2px solid #e8ecf2", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" };
+  // 테이블 헤더 셀 스타일 (스크롤해도 상단에 고정)
+  const thStyle = { padding: "12px 14px", textAlign: "left", fontSize: "12px", fontWeight: 700, color: "#64748b", background: "#f8fafc", borderBottom: "2px solid #e8ecf2", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", position: "sticky", top: 0, zIndex: 10 };
   const thStaticStyle = { ...thStyle, cursor: "default" };
   const tdStyle = { padding: "14px", fontSize: "13px", color: "#1a1a2e", borderBottom: "1px solid #f1f5f9", verticalAlign: "middle" };
 
@@ -718,15 +718,22 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
 
   return (
     <div>
-      <div style={{ marginBottom: "24px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-          <button onClick={onBack} style={{ background: "none", border: "none", color: "#64748b", fontSize: "14px", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: "4px" }}>← 목록으로</button>
-          {userRole === "admin" && <button onClick={() => setShowDeleteConfirm(true)} style={{ background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 14px", fontSize: "13px", color: "#991b1b", cursor: "pointer", fontWeight: 600 }}>삭제</button>}
+      <div style={{ marginBottom: "16px" }}>
+        {/* 헤더 한 줄로 통합: 뒤로가기 | 아바타·업체명·배지 | 삭제 */}
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+          <button onClick={onBack} style={{ background: "#f1f5f9", border: "none", color: "#64748b", fontSize: "13px", cursor: "pointer", padding: "8px 14px", borderRadius: "10px", display: "flex", alignItems: "center", gap: "4px", fontWeight: 600, flexShrink: 0 }}>← 목록</button>
+          <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "17px", flexShrink: 0 }}>{client.name[0]}</div>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1a1a2e", margin: 0, flexShrink: 0 }}>{client.name}</h2>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", flex: 1 }}>
+            <StatusBadge status={client.status} />
+            <ConsultBadge consultType={client.consultType} />
+          </div>
+          {userRole === "admin" && <button onClick={() => setShowDeleteConfirm(true)} style={{ background: "#fee2e2", border: "none", borderRadius: "10px", padding: "8px 14px", fontSize: "13px", color: "#991b1b", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>삭제</button>}
         </div>
 
         {/* 삭제 확인 팝업 */}
         {showDeleteConfirm && (
-          <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: "14px", padding: "20px", marginBottom: "16px" }}>
+          <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: "14px", padding: "20px", marginTop: "12px" }}>
             <div style={{ fontSize: "15px", fontWeight: 700, color: "#991b1b", marginBottom: "8px" }}>정말 삭제하시겠습니까?</div>
             <div style={{ fontSize: "13px", color: "#b91c1c", marginBottom: "16px" }}>"{client.name}" 거래처와 관련된 모든 상담 기록이 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</div>
             <div style={{ display: "flex", gap: "8px" }}>
@@ -735,16 +742,6 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
             </div>
           </div>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-          <div style={{ width: "52px", height: "52px", borderRadius: "14px", background: "linear-gradient(135deg, #1a1a2e, #16213e)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "20px", flexShrink: 0 }}>{client.name[0]}</div>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>{client.name}</h2>
-            <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <StatusBadge status={client.status} />
-              <ConsultBadge consultType={client.consultType} />
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* 핵심 정보 요약 카드 — 어느 탭에서든 상시 표시 */}
