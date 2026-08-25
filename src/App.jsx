@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.2.0";
+const APP_VERSION = "v1.3.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -415,7 +415,7 @@ function Dashboard({ clients, onNavigate }) {
           </div>
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "14px", marginBottom: "20px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "14px", marginBottom: "20px" }}>
         <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)", borderRadius: "16px", padding: "22px", color: "white" }}>
           <div style={{ fontSize: "13px", opacity: 0.7, marginBottom: "8px" }}>전체 거래처</div>
           <div style={{ fontSize: "32px", fontWeight: 800 }}>{stats.total}</div>
@@ -440,24 +440,24 @@ function Dashboard({ clients, onNavigate }) {
           ))}
         </div>
       </div>
-      <div style={{ background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", borderRadius: "16px", padding: "24px", color: "white", marginBottom: "16px" }}>
-        <div style={{ fontSize: "13px", opacity: 0.8, marginBottom: "6px" }}>총 계약 금액{selectedYear !== "전체" ? ` (${selectedYear}년)` : ""}</div>
-        <div style={{ fontSize: "28px", fontWeight: 800 }}>{formatMoney(stats.totalRevenue)}</div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "28px" }}>
-        <div style={{ background: "#ede9fe", borderRadius: "14px", padding: "18px" }}>
-          <div style={{ fontSize: "12px", color: "#7c3aed", fontWeight: 600, marginBottom: "6px" }}>컨설팅 비용 합계</div>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "14px", marginBottom: "28px" }}>
+        <div style={{ background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", borderRadius: "16px", padding: "24px", color: "white" }}>
+          <div style={{ fontSize: "13px", opacity: 0.8, marginBottom: "6px" }}>총 계약 금액{selectedYear !== "전체" ? ` (${selectedYear}년)` : ""}</div>
+          <div style={{ fontSize: "28px", fontWeight: 800 }}>{formatMoney(stats.totalRevenue)}</div>
+        </div>
+        <div style={{ background: "#ede9fe", borderRadius: "16px", padding: "24px" }}>
+          <div style={{ fontSize: "13px", color: "#7c3aed", fontWeight: 600, marginBottom: "6px" }}>컨설팅 비용 합계</div>
           <div style={{ fontSize: "22px", fontWeight: 800, color: "#7c3aed" }}>{formatMoney(stats.totalConsultFee)}</div>
         </div>
-        <div style={{ background: "#e0f2fe", borderRadius: "14px", padding: "18px" }}>
-          <div style={{ fontSize: "12px", color: "#0284c7", fontWeight: 600, marginBottom: "6px" }}>사후관리 비용 합계</div>
+        <div style={{ background: "#e0f2fe", borderRadius: "16px", padding: "24px" }}>
+          <div style={{ fontSize: "13px", color: "#0284c7", fontWeight: 600, marginBottom: "6px" }}>사후관리 비용 합계</div>
           <div style={{ fontSize: "22px", fontWeight: 800, color: "#0284c7" }}>{formatMoney(stats.totalMaintenanceFee)}</div>
         </div>
       </div>
       <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", padding: "24px" }}>
         <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: "0 0 18px 0" }}>최근 활동</h3>
         {stats.recentRecords.length === 0 && <p style={{ color: "#94a3b8", fontSize: "14px" }}>아직 기록이 없습니다.</p>}
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "12px" }}>
           {stats.recentRecords.map((r, i) => (
             <div key={i} onClick={() => onNavigate("detail", r.clientId)} style={{ display: "flex", alignItems: "flex-start", gap: "12px", padding: "14px", borderRadius: "12px", background: "#f8fafc", cursor: "pointer", transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#f1f5f9"} onMouseLeave={e => e.currentTarget.style.background = "#f8fafc"}>
               <span style={{ fontSize: "20px", flexShrink: 0, marginTop: "2px" }}>{RECORD_TYPES[r.type] || "?"}</span>
