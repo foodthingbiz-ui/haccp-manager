@@ -1,9 +1,9 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v1.6.0";
+const APP_VERSION = "v1.7.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -476,12 +476,24 @@ function Dashboard({ clients, onNavigate }) {
 
 // ─── 거래처 목록 ───
 // ─── 거래처 목록 (테이블 뷰) ───
-function ClientList({ clients, onNavigate, onAdd, onExport, onImport }) {
+function ClientList({ clients, onNavigate, onAdd, onExport, onImport, searchInputRef }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("전체");
   const [filterConsultType, setFilterConsultType] = useState("전체");
   const [sortKey, setSortKey] = useState("registeredAt");
   const [sortOrder, setSortOrder] = useState("desc"); // asc / desc
+
+  // "/" 키로 검색창 포커스
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "/" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        searchInputRef?.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [searchInputRef]);
 
   // 필터 + 정렬
   const filtered = useMemo(() => {
@@ -555,7 +567,7 @@ function ClientList({ clients, onNavigate, onAdd, onExport, onImport }) {
         {/* 검색창 */}
         <div style={{ position: "relative", marginBottom: "14px" }}>
           <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "16px", color: "#94a3b8" }}>🔍</span>
-          <input type="text" placeholder="거래처명, 담당자, 연락처, 업종 검색..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: "100%", padding: "10px 12px 10px 40px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", background: "white", boxSizing: "border-box" }} onFocus={e => e.target.style.borderColor = "#1a1a2e"} onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+          <input ref={searchInputRef} type="text" placeholder="거래처명, 담당자, 연락처, 업종 검색... ( / 키로 포커스)" value={search} onChange={e => setSearch(e.target.value)} style={{ width: "100%", padding: "10px 12px 10px 40px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", background: "white", boxSizing: "border-box" }} onFocus={e => e.target.style.borderColor = "#1a1a2e"} onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
         </div>
 
         {/* 필터 영역: 좌우 배치 */}
@@ -2221,6 +2233,9 @@ export default function App() {
 
   const showToast = (message, type = "success") => setToast({ message, type });
 
+  // 검색창 포커스를 위한 ref
+  const searchInputRef = useRef(null);
+
   // ── 인증 상태 감시 ──
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -2232,6 +2247,58 @@ export default function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ── 전역 키보드 단축키 ──
+  useEffect(() => {
+    if (!session) return;
+    const handler = (e) => {
+      // 입력 필드에 포커스가 있으면 대부분 단축키 비활성화 (Esc만 예외)
+      const inInput = document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA" || document.activeElement.tagName === "SELECT");
+
+      // Ctrl+K: 거래처 검색 (목록으로 이동 후 검색창 포커스)
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setView("list");
+        setTimeout(() => searchInputRef.current?.focus(), 100);
+        return;
+      }
+
+      // Ctrl+N: 새 거래처 추가
+      if ((e.ctrlKey || e.metaKey) && e.key === "n" && !inInput) {
+        e.preventDefault();
+        setShowAddModal(true);
+        return;
+      }
+
+      // Ctrl+1: 대시보드
+      if ((e.ctrlKey || e.metaKey) && e.key === "1") {
+        e.preventDefault();
+        setView("dashboard");
+        return;
+      }
+
+      // Ctrl+2: 거래처 목록
+      if ((e.ctrlKey || e.metaKey) && e.key === "2") {
+        e.preventDefault();
+        setView("list");
+        return;
+      }
+
+      // Esc: 모달 닫기 or 상세→목록
+      if (e.key === "Escape") {
+        if (showAddModal) {
+          setShowAddModal(false);
+        } else if (importErrors) {
+          setImportErrors(null);
+        } else if (view === "detail") {
+          setView("list");
+        }
+        return;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [session, view, showAddModal, importErrors]);
 
   // ── 로그인한 유저의 role 확인 ──
   useEffect(() => {
@@ -2710,8 +2777,7 @@ export default function App() {
         ) : (
           <>
             {view === "dashboard" && <Dashboard clients={clients} onNavigate={navigate} />}
-            {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} onExport={handleExport} onImport={handleImport} />}
-            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} userRole={userRole} showToast={showToast} />}
+            {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} onExport={handleExport} onImport={handleImport} searchInputRef={searchInputRef} />}            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} userRole={userRole} showToast={showToast} />}
             {view === "staff" && userRole === "admin" && <StaffManagement showToast={showToast} />}
           </>
         )}
@@ -2719,7 +2785,13 @@ export default function App() {
 
       {/* 거래처 추가 모달 */}
       {showAddModal && <AddClientModal onClose={() => setShowAddModal(false)} onSave={handleAddClient} saving={saving} showToast={showToast} />}
-
+      {/* 하단 단축키 안내 (고정) */}
+      <div style={{ position: "fixed", bottom: "12px", right: "16px", background: "rgba(26, 26, 46, 0.85)", color: "white", padding: "6px 14px", borderRadius: "20px", fontSize: "11px", display: "flex", gap: "12px", alignItems: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", zIndex: 50, backdropFilter: "blur(4px)" }}>
+        <span><kbd style={{ background: "rgba(255,255,255,0.2)", padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontFamily: "monospace" }}>Ctrl+K</kbd> 검색</span>
+        <span><kbd style={{ background: "rgba(255,255,255,0.2)", padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontFamily: "monospace" }}>Ctrl+N</kbd> 추가</span>
+        <span><kbd style={{ background: "rgba(255,255,255,0.2)", padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontFamily: "monospace" }}>Esc</kbd> 뒤로</span>
+      </div>
+      
       {/* Excel 가져오기 에러 팝업 */}
       {importErrors && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px", backdropFilter: "blur(4px)" }} onClick={() => setImportErrors(null)}>
