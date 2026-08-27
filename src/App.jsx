@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.0.0";
+const APP_VERSION = "v2.1.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -24,6 +24,7 @@ const CONSULT_TYPES = {
 };
 
 const RECORD_TYPES = { "방문": "🏢", "상담": "💬", "전화": "📞" };
+const PACKAGING_TYPES = ["유리", "플라스틱", "종이", "금속", "비닐/필름", "복합재질", "기타"];
 // 공용 입력창 스타일 (전 컴포넌트 공통)
 const inputStyle = { width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "14px", outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
 
@@ -711,6 +712,7 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
   const tabs = [
     { key: "info", label: "기본 정보", icon: "📋" },
     { key: "records", label: "상담 기록", icon: "📝" },
+    { key: "materials", label: "원료·부자재", icon: "📦" },
     { key: "haccp", label: "HACCP관리", icon: "🔬" },
     { key: "contract", label: "계약/매출", icon: "💰" },
   ];
@@ -1109,6 +1111,11 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Materials/Packaging Tab ── */}
+      {activeTab === "materials" && (
+        <MaterialPackagingTab clientId={client.id} showToast={showToast} />
       )}
 
       {/* ── HACCP Tab ── */}
@@ -1699,8 +1706,198 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle, showToast }) {
 }
 
 // ─── 업종/인허가 유형 태그 입력 컴포넌트 ───
-function TagInput({ tags, onChange, placeholder }) {
-  const [input, setInput] = useState("");
+// ─── 원료·부자재 탭 (컨테이너) ───
+// 이번 단계는 부자재만 구현. 원료 섹션은 Phase C에서 이 위에 추가됨.
+function MaterialPackagingTab({ clientId, showToast }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <PackagingManagement clientId={clientId} showToast={showToast} />
+    </div>
+  );
+}
+
+// ─── 부자재 관리 컴포넌트 ───
+function PackagingManagement({ clientId, showToast }) {
+  const [packagings, setPackagings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ packaging_name: "", packaging_type: "", memo: "" });
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ packaging_name: "", packaging_type: "", memo: "" });
+  const [deleteId, setDeleteId] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("packagings")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false });
+    setPackagings(data || []);
+    setLoading(false);
+  }, [clientId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleAdd = async () => {
+    if (!form.packaging_name.trim()) return showToast("부자재명을 입력해주세요.", "error");
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("packagings")
+      .insert([{ client_id: clientId, packaging_name: form.packaging_name.trim(), packaging_type: form.packaging_type.trim() || null, memo: form.memo.trim() || null }])
+      .select()
+      .single();
+    if (error) {
+      if (error.code === "23505") showToast("이미 등록된 부자재입니다 (같은 이름·종류).", "error");
+      else showToast("부자재 추가에 실패했습니다.", "error");
+      setSaving(false);
+      return;
+    }
+    setPackagings(prev => [data, ...prev]);
+    setForm({ packaging_name: "", packaging_type: "", memo: "" });
+    setShowForm(false);
+    setSaving(false);
+    showToast("부자재가 추가되었습니다.");
+  };
+
+  const startEdit = (p) => {
+    setEditingId(p.id);
+    setEditForm({ packaging_name: p.packaging_name, packaging_type: p.packaging_type || "", memo: p.memo || "" });
+  };
+
+  const saveEdit = async () => {
+    if (!editForm.packaging_name.trim()) return showToast("부자재명을 입력해주세요.", "error");
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("packagings")
+      .update({ packaging_name: editForm.packaging_name.trim(), packaging_type: editForm.packaging_type.trim() || null, memo: editForm.memo.trim() || null })
+      .eq("id", editingId)
+      .select()
+      .single();
+    if (error) {
+      if (error.code === "23505") showToast("이미 등록된 부자재입니다 (같은 이름·종류).", "error");
+      else showToast("수정에 실패했습니다.", "error");
+      setSaving(false);
+      return;
+    }
+    setPackagings(prev => prev.map(p => p.id === editingId ? data : p));
+    setEditingId(null);
+    setSaving(false);
+    showToast("수정되었습니다.");
+  };
+
+  const handleDelete = async (id) => {
+    const { error } = await supabase.from("packagings").delete().eq("id", id);
+    if (error) { showToast("삭제에 실패했습니다.", "error"); return; }
+    setPackagings(prev => prev.filter(p => p.id !== id));
+    setDeleteId(null);
+    showToast("부자재가 삭제되었습니다.");
+  };
+
+  if (loading) return <LoadingSpinner message="부자재 목록 로딩 중..." />;
+
+  return (
+    <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", padding: "24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+        <div>
+          <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>부자재</h3>
+          <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>총 {packagings.length}건 · 제조사/성적서 관리는 다음 업데이트에서 추가됩니다</p>
+        </div>
+        <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+          {showForm ? "취소" : "+ 부자재 추가"}
+        </button>
+      </div>
+
+      {/* 추가 폼 */}
+      {showForm && (
+        <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
+          <div style={{ display: "grid", gap: "12px" }}>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>부자재명 *</label>
+              <input value={form.packaging_name} onChange={e => setForm({ ...form, packaging_name: e.target.value })} style={inputStyle} placeholder="예: 유리병 500ml, 라벨, 뚜껑" />
+            </div>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>종류</label>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
+                {PACKAGING_TYPES.map(t => (
+                  <button key={t} type="button" onClick={() => setForm({ ...form, packaging_type: t })} style={{ padding: "6px 12px", borderRadius: "8px", border: form.packaging_type === t ? "2px solid #0284c7" : "1px solid #e2e8f0", background: form.packaging_type === t ? "#e0f2fe" : "white", color: form.packaging_type === t ? "#0284c7" : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t}</button>
+                ))}
+              </div>
+              <input value={form.packaging_type} onChange={e => setForm({ ...form, packaging_type: e.target.value })} style={inputStyle} placeholder="직접 입력도 가능합니다" />
+            </div>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
+              <textarea value={form.memo} onChange={e => setForm({ ...form, memo: e.target.value })} rows={2} style={{ ...inputStyle, resize: "vertical" }} placeholder="추가 정보 (선택)" />
+            </div>
+            <button onClick={handleAdd} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px", fontSize: "13px", fontWeight: 600, cursor: "pointer", opacity: saving ? 0.6 : 1, width: "100%" }}>{saving ? "저장 중..." : "+ 추가"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* 목록 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {packagings.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>등록된 부자재가 없습니다.</p>}
+        {packagings.map(p => (
+          <div key={p.id} style={{ background: editingId === p.id ? "#fff" : "#f8fafc", borderRadius: "12px", padding: "14px 16px", border: editingId === p.id ? "2px solid #1a1a2e" : "1px solid #e8ecf2" }}>
+            {editingId === p.id ? (
+              /* 수정 모드 */
+              <div style={{ display: "grid", gap: "10px" }}>
+                <div>
+                  <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>부자재명 *</label>
+                  <input value={editForm.packaging_name} onChange={e => setEditForm({ ...editForm, packaging_name: e.target.value })} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>종류</label>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
+                    {PACKAGING_TYPES.map(t => (
+                      <button key={t} type="button" onClick={() => setEditForm({ ...editForm, packaging_type: t })} style={{ padding: "6px 12px", borderRadius: "8px", border: editForm.packaging_type === t ? "2px solid #0284c7" : "1px solid #e2e8f0", background: editForm.packaging_type === t ? "#e0f2fe" : "white", color: editForm.packaging_type === t ? "#0284c7" : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{t}</button>
+                    ))}
+                  </div>
+                  <input value={editForm.packaging_type} onChange={e => setEditForm({ ...editForm, packaging_type: e.target.value })} style={inputStyle} placeholder="직접 입력도 가능합니다" />
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>메모</label>
+                  <textarea value={editForm.memo} onChange={e => setEditForm({ ...editForm, memo: e.target.value })} rows={2} style={{ ...inputStyle, resize: "vertical" }} />
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: "9px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
+                  <button onClick={saveEdit} disabled={saving} style={{ flex: 1, padding: "9px", border: "none", borderRadius: "10px", background: "#0f766e", color: "white", fontSize: "13px", cursor: "pointer", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "저장 중..." : "수정 완료"}</button>
+                </div>
+              </div>
+            ) : (
+              /* 보기 모드 */
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "14px", fontWeight: 700, color: "#1a1a2e" }}>{p.packaging_name}</span>
+                    {p.packaging_type && <span style={{ fontSize: "11px", padding: "2px 10px", borderRadius: "6px", background: "#e0f2fe", color: "#0284c7", fontWeight: 600 }}>{p.packaging_type}</span>}
+                  </div>
+                  {p.memo && <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", whiteSpace: "pre-wrap" }}>{p.memo}</div>}
+                </div>
+                {deleteId === p.id ? (
+                  <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
+                    <span style={{ fontSize: "12px", color: "#991b1b", fontWeight: 600 }}>삭제?</span>
+                    <button onClick={() => handleDelete(p.id)} style={{ background: "#dc2626", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "white", cursor: "pointer", fontWeight: 600 }}>예</button>
+                    <button onClick={() => setDeleteId(null)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>아니오</button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                    <button onClick={() => startEdit(p)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>수정</button>
+                    <button onClick={() => setDeleteId(p.id)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "16px", cursor: "pointer", padding: "2px 6px" }}>✕</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── 업종/인허가 유형 태그 입력 컴포넌트 ───
+function TagInput({ tags, onChange, placeholder }) {  const [input, setInput] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const handleKeyDown = (e) => {
     if (isComposing) return;
