@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.2.0";
+const APP_VERSION = "v2.3.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1731,6 +1731,7 @@ function MaterialPackagingTab({ clientId, showToast }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       <ProductManagement clientId={clientId} products={products} loading={productsLoading} onRefresh={fetchProducts} showToast={showToast} />
+      <MaterialManagement clientId={clientId} products={products} showToast={showToast} />
       <PackagingManagement clientId={clientId} showToast={showToast} />
     </div>
   );
@@ -1906,8 +1907,269 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
 }
 
 // ─── 부자재 관리 컴포넌트 ───
-function PackagingManagement({ clientId, showToast }) {
-  const [packagings, setPackagings] = useState([]);
+// ─── 원료 관리 컴포넌트 ───
+// 원료 구분 기준: (원료명 + 원산지 + 함량). 하나라도 다르면 별개 원료.
+// 등록 시 사용 제품을 체크하면 material_products로 연결. 제조사·성적서는 Phase C-3.
+function MaterialManagement({ clientId, products, showToast }) {
+  const [materials, setMaterials] = useState([]);      // 원료 + 연결 제품 정보 포함
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ material_name: "", origin: "", content_ratio: "", productIds: [] });
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ material_name: "", origin: "", content_ratio: "", productIds: [] });
+  const [deleteId, setDeleteId] = useState(null);
+
+  const productName = useCallback((id) => {
+    const p = products.find(pr => pr.id === id);
+    return p ? p.product_name : "(삭제된 제품)";
+  }, [products]);
+
+  // 원료 + 각 원료의 연결 제품 id 목록을 함께 로딩
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const { data: mats } = await supabase
+      .from("materials")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false });
+
+    const list = mats || [];
+    if (list.length > 0) {
+      const { data: links } = await supabase
+        .from("material_products")
+        .select("material_id, product_id")
+        .in("material_id", list.map(m => m.id));
+      const byMat = {};
+      (links || []).forEach(l => {
+        if (!byMat[l.material_id]) byMat[l.material_id] = [];
+        byMat[l.material_id].push(l.product_id);
+      });
+      list.forEach(m => { m.productIds = byMat[m.id] || []; });
+    }
+    setMaterials(list);
+    setLoading(false);
+  }, [clientId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // 원료↔제품 연결을 목표 상태로 동기화 (추가/삭제 diff)
+  const syncProductLinks = async (materialId, targetIds, currentIds = []) => {
+    const toAdd = targetIds.filter(id => !currentIds.includes(id));
+    const toRemove = currentIds.filter(id => !targetIds.includes(id));
+    if (toAdd.length > 0) {
+      await supabase.from("material_products").insert(toAdd.map(pid => ({ material_id: materialId, product_id: pid })));
+    }
+    if (toRemove.length > 0) {
+      for (const pid of toRemove) {
+        await supabase.from("material_products").delete().eq("material_id", materialId).eq("product_id", pid);
+      }
+    }
+  };
+
+  const handleAdd = async () => {
+    if (!form.material_name.trim()) return showToast("원료명을 입력해주세요.", "error");
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("materials")
+      .insert([{
+        client_id: clientId,
+        material_name: form.material_name.trim(),
+        origin: form.origin.trim() || null,
+        content_ratio: form.content_ratio.trim() || null,
+        source: "manual",
+      }])
+      .select()
+      .single();
+    if (error) {
+      if (error.code === "23505") showToast("이미 등록된 원료입니다 (원료명·원산지·함량이 동일).", "error");
+      else showToast("원료 추가에 실패했습니다.", "error");
+      setSaving(false);
+      return;
+    }
+    await syncProductLinks(data.id, form.productIds, []);
+    setForm({ material_name: "", origin: "", content_ratio: "", productIds: [] });
+    setShowForm(false);
+    setSaving(false);
+    await fetchData();
+    showToast("원료가 추가되었습니다.");
+  };
+
+  const startEdit = (m) => {
+    setEditingId(m.id);
+    setEditForm({ material_name: m.material_name, origin: m.origin || "", content_ratio: m.content_ratio || "", productIds: [...(m.productIds || [])] });
+  };
+
+  const saveEdit = async () => {
+    if (!editForm.material_name.trim()) return showToast("원료명을 입력해주세요.", "error");
+    setSaving(true);
+    const original = materials.find(m => m.id === editingId);
+    const { error } = await supabase
+      .from("materials")
+      .update({
+        material_name: editForm.material_name.trim(),
+        origin: editForm.origin.trim() || null,
+        content_ratio: editForm.content_ratio.trim() || null,
+      })
+      .eq("id", editingId);
+    if (error) {
+      if (error.code === "23505") showToast("이미 등록된 원료입니다 (원료명·원산지·함량이 동일).", "error");
+      else showToast("수정에 실패했습니다.", "error");
+      setSaving(false);
+      return;
+    }
+    await syncProductLinks(editingId, editForm.productIds, original?.productIds || []);
+    setEditingId(null);
+    setSaving(false);
+    await fetchData();
+    showToast("수정되었습니다.");
+  };
+
+  const handleDelete = async (id) => {
+    // material_products는 FK CASCADE로 함께 삭제됨
+    const { error } = await supabase.from("materials").delete().eq("id", id);
+    if (error) { showToast("삭제에 실패했습니다.", "error"); return; }
+    setDeleteId(null);
+    await fetchData();
+    showToast("원료가 삭제되었습니다.");
+  };
+
+  // 제품 선택 체크박스 UI (추가/수정 공용)
+  const ProductPicker = ({ selected, onToggle }) => (
+    <div>
+      <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>사용 제품 (선택)</label>
+      {products.length === 0 ? (
+        <div style={{ fontSize: "12px", color: "#94a3b8", background: "#f8fafc", padding: "10px 14px", borderRadius: "10px" }}>먼저 위에서 제품을 등록하면 여기서 연결할 수 있습니다.</div>
+      ) : (
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {products.map(p => {
+            const on = selected.includes(p.id);
+            return (
+              <button key={p.id} type="button" onClick={() => onToggle(p.id)} style={{ padding: "6px 12px", borderRadius: "8px", border: on ? "2px solid #e11d48" : "1px solid #e2e8f0", background: on ? "#ffe4e6" : "white", color: on ? "#e11d48" : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+                {on ? "✓ " : ""}{p.product_name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const toggleForm = (pid) => setForm(f => ({ ...f, productIds: f.productIds.includes(pid) ? f.productIds.filter(x => x !== pid) : [...f.productIds, pid] }));
+  const toggleEdit = (pid) => setEditForm(f => ({ ...f, productIds: f.productIds.includes(pid) ? f.productIds.filter(x => x !== pid) : [...f.productIds, pid] }));
+
+  return (
+    <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", padding: "24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+        <div>
+          <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>원료</h3>
+          <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>총 {materials.length}건 · 원료명·원산지·함량이 다르면 별개 원료 · 제조사·성적서는 다음 업데이트</p>
+        </div>
+        <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+          {showForm ? "취소" : "+ 원료 추가"}
+        </button>
+      </div>
+
+      {/* 추가 폼 */}
+      {showForm && (
+        <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
+          <div style={{ display: "grid", gap: "12px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>원료명 *</label>
+                <input value={form.material_name} onChange={e => setForm({ ...form, material_name: e.target.value })} style={inputStyle} placeholder="예: 대두" />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>원산지</label>
+                <input value={form.origin} onChange={e => setForm({ ...form, origin: e.target.value })} style={inputStyle} placeholder="예: 국산" />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>함량</label>
+                <input value={form.content_ratio} onChange={e => setForm({ ...form, content_ratio: e.target.value })} style={inputStyle} placeholder="예: 40%" />
+              </div>
+            </div>
+            <ProductPicker selected={form.productIds} onToggle={toggleForm} />
+            <button onClick={handleAdd} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px", fontSize: "13px", fontWeight: 600, cursor: "pointer", opacity: saving ? 0.6 : 1, width: "100%" }}>{saving ? "저장 중..." : "+ 추가"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* 목록 */}
+      {loading ? (
+        <LoadingSpinner message="원료 목록 로딩 중..." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {materials.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>등록된 원료가 없습니다.</p>}
+          {materials.map(m => (
+            <div key={m.id} style={{ background: editingId === m.id ? "#fff" : "#f8fafc", borderRadius: "12px", padding: "14px 16px", border: editingId === m.id ? "2px solid #1a1a2e" : "1px solid #e8ecf2" }}>
+              {editingId === m.id ? (
+                /* 수정 모드 */
+                <div style={{ display: "grid", gap: "12px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "12px" }}>
+                    <div>
+                      <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>원료명 *</label>
+                      <input value={editForm.material_name} onChange={e => setEditForm({ ...editForm, material_name: e.target.value })} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>원산지</label>
+                      <input value={editForm.origin} onChange={e => setEditForm({ ...editForm, origin: e.target.value })} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>함량</label>
+                      <input value={editForm.content_ratio} onChange={e => setEditForm({ ...editForm, content_ratio: e.target.value })} style={inputStyle} />
+                    </div>
+                  </div>
+                  <ProductPicker selected={editForm.productIds} onToggle={toggleEdit} />
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: "9px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
+                    <button onClick={saveEdit} disabled={saving} style={{ flex: 1, padding: "9px", border: "none", borderRadius: "10px", background: "#0f766e", color: "white", fontSize: "13px", cursor: "pointer", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "저장 중..." : "수정 완료"}</button>
+                  </div>
+                </div>
+              ) : (
+                /* 보기 모드 */
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "14px", fontWeight: 700, color: "#1a1a2e" }}>{m.material_name}</span>
+                      {(m.origin || m.content_ratio) && (
+                        <span style={{ fontSize: "12px", color: "#64748b" }}>
+                          ({[m.origin, m.content_ratio].filter(Boolean).join(", ")})
+                        </span>
+                      )}
+                    </div>
+                    {m.productIds && m.productIds.length > 0 && (
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
+                        <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600 }}>사용:</span>
+                        {m.productIds.map(pid => (
+                          <span key={pid} style={{ fontSize: "11px", padding: "2px 10px", borderRadius: "6px", background: "#ffe4e6", color: "#e11d48", fontWeight: 600 }}>{productName(pid)}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {deleteId === m.id ? (
+                    <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
+                      <span style={{ fontSize: "12px", color: "#991b1b", fontWeight: 600 }}>삭제?</span>
+                      <button onClick={() => handleDelete(m.id)} style={{ background: "#dc2626", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "white", cursor: "pointer", fontWeight: 600 }}>예</button>
+                      <button onClick={() => setDeleteId(null)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>아니오</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                      <button onClick={() => startEdit(m)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>수정</button>
+                      <button onClick={() => setDeleteId(m.id)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "16px", cursor: "pointer", padding: "2px 6px" }}>✕</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 부자재 관리 컴포넌트 ───
+function PackagingManagement({ clientId, showToast }) {  const [packagings, setPackagings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
