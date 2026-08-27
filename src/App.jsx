@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.3.0";
+const APP_VERSION = "v2.4.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1919,6 +1919,7 @@ function MaterialManagement({ clientId, products, showToast }) {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ material_name: "", origin: "", content_ratio: "", productIds: [] });
   const [deleteId, setDeleteId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
 
   const productName = useCallback((id) => {
     const p = products.find(pr => pr.id === id);
@@ -2127,35 +2128,45 @@ function MaterialManagement({ clientId, products, showToast }) {
                 </div>
               ) : (
                 /* 보기 모드 */
-                <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "14px", fontWeight: 700, color: "#1a1a2e" }}>{m.material_name}</span>
-                      {(m.origin || m.content_ratio) && (
-                        <span style={{ fontSize: "12px", color: "#64748b" }}>
-                          ({[m.origin, m.content_ratio].filter(Boolean).join(", ")})
-                        </span>
+                /* 보기 모드 */
+                <div>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                    <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "14px", color: "#94a3b8", transition: "transform 0.2s", display: "inline-block", transform: expandedId === m.id ? "rotate(90deg)" : "rotate(0)" }}>▶</span>
+                        <span style={{ fontSize: "14px", fontWeight: 700, color: "#1a1a2e" }}>{m.material_name}</span>
+                        {(m.origin || m.content_ratio) && (
+                          <span style={{ fontSize: "12px", color: "#64748b" }}>
+                            ({[m.origin, m.content_ratio].filter(Boolean).join(", ")})
+                          </span>
+                        )}
+                      </div>
+                      {m.productIds && m.productIds.length > 0 && (
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px", paddingLeft: "22px" }}>
+                          <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600 }}>사용:</span>
+                          {m.productIds.map(pid => (
+                            <span key={pid} style={{ fontSize: "11px", padding: "2px 10px", borderRadius: "6px", background: "#ffe4e6", color: "#e11d48", fontWeight: 600 }}>{productName(pid)}</span>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    {m.productIds && m.productIds.length > 0 && (
-                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
-                        <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600 }}>사용:</span>
-                        {m.productIds.map(pid => (
-                          <span key={pid} style={{ fontSize: "11px", padding: "2px 10px", borderRadius: "6px", background: "#ffe4e6", color: "#e11d48", fontWeight: 600 }}>{productName(pid)}</span>
-                        ))}
+                    {deleteId === m.id ? (
+                      <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
+                        <span style={{ fontSize: "12px", color: "#991b1b", fontWeight: 600 }}>삭제?</span>
+                        <button onClick={() => handleDelete(m.id)} style={{ background: "#dc2626", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "white", cursor: "pointer", fontWeight: 600 }}>예</button>
+                        <button onClick={() => setDeleteId(null)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>아니오</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                        <button onClick={() => startEdit(m)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>수정</button>
+                        <button onClick={() => setDeleteId(m.id)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "16px", cursor: "pointer", padding: "2px 6px" }}>✕</button>
                       </div>
                     )}
                   </div>
-                  {deleteId === m.id ? (
-                    <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
-                      <span style={{ fontSize: "12px", color: "#991b1b", fontWeight: 600 }}>삭제?</span>
-                      <button onClick={() => handleDelete(m.id)} style={{ background: "#dc2626", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "white", cursor: "pointer", fontWeight: 600 }}>예</button>
-                      <button onClick={() => setDeleteId(null)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>아니오</button>
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
-                      <button onClick={() => startEdit(m)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>수정</button>
-                      <button onClick={() => setDeleteId(m.id)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "16px", cursor: "pointer", padding: "2px 6px" }}>✕</button>
+                  {/* 펼친 영역: 제조사 + 성적서 */}
+                  {expandedId === m.id && (
+                    <div style={{ marginTop: "12px", paddingTop: "12px", paddingLeft: "22px", borderTop: "1px solid #f1f5f9" }}>
+                      <MaterialManufacturers materialId={m.id} showToast={showToast} />
                     </div>
                   )}
                 </div>
@@ -2169,7 +2180,246 @@ function MaterialManagement({ clientId, products, showToast }) {
 }
 
 // ─── 부자재 관리 컴포넌트 ───
-function PackagingManagement({ clientId, showToast }) {  const [packagings, setPackagings] = useState([]);
+// ─── 원료 제조사 + 성적서 이력 컴포넌트 ───
+// material_manufacturers(제조사) + material_certificates(성적서 이력, 파일첨부).
+// 파일은 material-certs 버킷에 저장, 표시할 때 Signed URL(1시간) 생성.
+function MaterialManufacturers({ materialId, showToast }) {
+  const [manufacturers, setManufacturers] = useState([]);
+  const [certsByManuf, setCertsByManuf] = useState({}); // { manufId: [cert, ...] }
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // 제조사 추가 폼
+  const [showManufForm, setShowManufForm] = useState(false);
+  const [manufName, setManufName] = useState("");
+  const [manufMemo, setManufMemo] = useState("");
+
+  // 성적서 추가 폼 (제조사별)
+  const [certFormFor, setCertFormFor] = useState(null); // manufId
+  const [certReceived, setCertReceived] = useState("");
+  const [certNext, setCertNext] = useState("");
+  const [certMemo, setCertMemo] = useState("");
+  const [certFile, setCertFile] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const { data: manufs } = await supabase
+      .from("material_manufacturers")
+      .select("*")
+      .eq("material_id", materialId)
+      .order("created_at", { ascending: true });
+    const list = manufs || [];
+    setManufacturers(list);
+
+    if (list.length > 0) {
+      const { data: certs } = await supabase
+        .from("material_certificates")
+        .select("*")
+        .in("material_manufacturer_id", list.map(x => x.id))
+        .order("created_at", { ascending: false });
+      const grouped = {};
+      (certs || []).forEach(c => {
+        if (!grouped[c.material_manufacturer_id]) grouped[c.material_manufacturer_id] = [];
+        grouped[c.material_manufacturer_id].push(c);
+      });
+      setCertsByManuf(grouped);
+    } else {
+      setCertsByManuf({});
+    }
+    setLoading(false);
+  }, [materialId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // 제조사 추가
+  const addManufacturer = async () => {
+    if (!manufName.trim()) return showToast("제조사명을 입력해주세요.", "error");
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("material_manufacturers")
+      .insert([{ material_id: materialId, manufacturer_name: manufName.trim(), memo: manufMemo.trim() || null }])
+      .select()
+      .single();
+    if (error) {
+      if (error.code === "23505") showToast("이미 등록된 제조사입니다.", "error");
+      else showToast("제조사 추가에 실패했습니다.", "error");
+      setSaving(false);
+      return;
+    }
+    setManufacturers(prev => [...prev, data]);
+    setManufName(""); setManufMemo(""); setShowManufForm(false);
+    setSaving(false);
+    showToast("제조사가 추가되었습니다.");
+  };
+
+  // 제조사 삭제 (성적서·파일 함께 정리)
+  const deleteManufacturer = async (manufId) => {
+    if (!window.confirm("이 제조사를 삭제하시겠습니까?\n등록된 성적서와 첨부파일도 함께 삭제됩니다.")) return;
+    const certs = certsByManuf[manufId] || [];
+    const paths = certs.map(c => c.cert_file_path).filter(Boolean);
+    const { error } = await supabase.from("material_manufacturers").delete().eq("id", manufId);
+    if (error) { showToast("삭제에 실패했습니다.", "error"); return; }
+    if (paths.length > 0) await supabase.storage.from("material-certs").remove(paths);
+    setManufacturers(prev => prev.filter(x => x.id !== manufId));
+    setCertsByManuf(prev => { const n = { ...prev }; delete n[manufId]; return n; });
+    showToast("제조사가 삭제되었습니다.");
+  };
+
+  // 성적서 추가 (파일 업로드)
+  const openCertForm = (manufId) => {
+    setCertFormFor(manufId);
+    setCertReceived(new Date().toISOString().split("T")[0]);
+    setCertNext(""); setCertMemo(""); setCertFile(null);
+  };
+
+  const addCertificate = async (manuf) => {
+    if (!certFile) return showToast("성적서 파일을 선택해주세요.", "error");
+    const vErr = validateFile(certFile);
+    if (vErr) return showToast(vErr, "error");
+    setSaving(true);
+
+    // 파일 업로드: {materialId}/{manufId}/{timestamp}_{random}.{ext}
+    const ext = certFile.name.split(".").pop();
+    const path = `${materialId}/${manuf.id}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("material-certs").upload(path, certFile);
+    if (upErr) { showToast("파일 업로드에 실패했습니다.", "error"); setSaving(false); return; }
+
+    const { data, error } = await supabase
+      .from("material_certificates")
+      .insert([{
+        material_manufacturer_id: manuf.id,
+        cert_file_path: path,
+        cert_file_name: certFile.name,
+        mime_type: certFile.type || null,
+        file_size_bytes: certFile.size,
+        received_date: certReceived || null,
+        next_cert_date: certNext || null,
+        memo: certMemo.trim() || null,
+      }])
+      .select()
+      .single();
+    if (error) {
+      await supabase.storage.from("material-certs").remove([path]); // 롤백
+      showToast("성적서 저장에 실패했습니다.", "error");
+      setSaving(false);
+      return;
+    }
+    setCertsByManuf(prev => ({ ...prev, [manuf.id]: [data, ...(prev[manuf.id] || [])] }));
+    setCertFormFor(null); setCertFile(null);
+    setSaving(false);
+    showToast("성적서가 등록되었습니다.");
+  };
+
+  // 성적서 삭제
+  const deleteCertificate = async (manufId, cert) => {
+    const { error } = await supabase.from("material_certificates").delete().eq("id", cert.id);
+    if (error) { showToast("삭제에 실패했습니다.", "error"); return; }
+    if (cert.cert_file_path) await supabase.storage.from("material-certs").remove([cert.cert_file_path]);
+    setCertsByManuf(prev => ({ ...prev, [manufId]: (prev[manufId] || []).filter(c => c.id !== cert.id) }));
+    showToast("성적서가 삭제되었습니다.");
+  };
+
+  // 파일 열기 (Signed URL)
+  const openFile = async (path) => {
+    if (!path) return;
+    const { data } = await supabase.storage.from("material-certs").createSignedUrl(path, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+    else showToast("파일을 여는 데 실패했습니다.", "error");
+  };
+
+  if (loading) return <div style={{ fontSize: "12px", color: "#94a3b8", padding: "8px 0" }}>제조사 정보 로딩 중...</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+        <span style={{ fontSize: "12px", fontWeight: 700, color: "#1a1a2e" }}>등록된 제조사 ({manufacturers.length})</span>
+        <button onClick={() => setShowManufForm(!showManufForm)} style={{ background: showManufForm ? "#f1f5f9" : "#1a1a2e", color: showManufForm ? "#64748b" : "white", border: "none", borderRadius: "8px", padding: "5px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>{showManufForm ? "취소" : "+ 제조사 추가"}</button>
+      </div>
+
+      {/* 제조사 추가 폼 */}
+      {showManufForm && (
+        <div style={{ background: "#f8fafc", borderRadius: "10px", padding: "12px", marginBottom: "10px", border: "1px solid #e2e8f0", display: "grid", gap: "8px" }}>
+          <input value={manufName} onChange={e => setManufName(e.target.value)} style={{ ...inputStyle, fontSize: "13px" }} placeholder="제조사명 *" />
+          <input value={manufMemo} onChange={e => setManufMemo(e.target.value)} style={{ ...inputStyle, fontSize: "13px" }} placeholder="메모 (선택)" />
+          <button onClick={addManufacturer} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "8px", padding: "8px", fontSize: "12px", fontWeight: 600, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "저장 중..." : "추가"}</button>
+        </div>
+      )}
+
+      {/* 제조사 목록 */}
+      {manufacturers.length === 0 && !showManufForm && (
+        <p style={{ fontSize: "12px", color: "#94a3b8", padding: "8px 0" }}>등록된 제조사가 없습니다.</p>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {manufacturers.map(manuf => {
+          const certs = certsByManuf[manuf.id] || [];
+          return (
+            <div key={manuf.id} style={{ background: "#f8fafc", borderRadius: "10px", padding: "12px", border: "1px solid #e8ecf2" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e" }}>{manuf.manufacturer_name}</div>
+                  {manuf.memo && <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "2px" }}>{manuf.memo}</div>}
+                </div>
+                <button onClick={() => deleteManufacturer(manuf.id)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "14px", cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>✕</button>
+              </div>
+
+              {/* 성적서 목록 */}
+              <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                {certs.map(cert => (
+                  <div key={cert.id} style={{ background: "white", borderRadius: "8px", padding: "8px 10px", border: "1px solid #e8ecf2", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button onClick={() => openFile(cert.cert_file_path)} style={{ flex: 1, minWidth: 0, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                      <div style={{ fontSize: "12px", color: "#3b82f6", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {cert.cert_file_name}</div>
+                      <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>
+                        {cert.received_date ? `수령: ${formatDate(cert.received_date)}` : ""}
+                        {cert.next_cert_date ? `${cert.received_date ? " · " : ""}다음: ${formatDate(cert.next_cert_date)}` : ""}
+                      </div>
+                      {cert.memo && <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>{cert.memo}</div>}
+                    </button>
+                    <button onClick={() => deleteCertificate(manuf.id, cert)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "13px", cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>✕</button>
+                  </div>
+                ))}
+                {certs.length === 0 && certFormFor !== manuf.id && (
+                  <div style={{ fontSize: "11px", color: "#cbd5e1", padding: "2px 0" }}>등록된 성적서가 없습니다.</div>
+                )}
+              </div>
+
+              {/* 성적서 추가 */}
+              {certFormFor === manuf.id ? (
+                <div style={{ marginTop: "10px", background: "#eff6ff", borderRadius: "8px", padding: "12px", border: "1px solid #bfdbfe", display: "grid", gap: "8px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                    <div>
+                      <label style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>수령일</label>
+                      <input type="date" value={certReceived} onChange={e => setCertReceived(e.target.value)} style={{ ...inputStyle, fontSize: "13px" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>다음 수령 예정일</label>
+                      <input type="date" value={certNext} onChange={e => setCertNext(e.target.value)} style={{ ...inputStyle, fontSize: "13px" }} />
+                    </div>
+                  </div>
+                  <input value={certMemo} onChange={e => setCertMemo(e.target.value)} style={{ ...inputStyle, fontSize: "13px" }} placeholder="메모 (선택)" />
+                  <div>
+                    <label style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>성적서 파일 * (최대 10MB, PDF/이미지)</label>
+                    <input type="file" accept="image/*,.pdf" onChange={e => setCertFile(e.target.files[0] || null)} style={{ fontSize: "12px", color: "#64748b" }} />
+                    {certFile && <div style={{ fontSize: "11px", color: "#0f766e", marginTop: "4px" }}>📎 {certFile.name} ({(certFile.size / 1024).toFixed(0)}KB)</div>}
+                  </div>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button onClick={() => setCertFormFor(null)} style={{ flex: 1, padding: "8px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "white", fontSize: "12px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
+                    <button onClick={() => addCertificate(manuf)} disabled={saving} style={{ flex: 1, padding: "8px", border: "none", borderRadius: "8px", background: "#0f766e", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "업로드 중..." : "성적서 등록"}</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => openCertForm(manuf.id)} style={{ marginTop: "8px", width: "100%", padding: "7px", border: "1px dashed #cbd5e1", borderRadius: "8px", background: "white", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>+ 성적서 추가</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── 부자재 관리 컴포넌트 ───
+function PackagingManagement({ clientId, showToast }) {  
+  const [packagings, setPackagings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
