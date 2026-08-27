@@ -128,65 +128,116 @@
 - is_active, is_deleted
 - created_at
 
-### 4.2 v3 신규 테이블 (원료·부자재 관리)
+### 4.2 v3 신규 테이블 (원료·부자재 관리) — 실제 실행 기준
+
+> Phase A-1에서 실행한 SQL 기준. 명세서 초안보다 정규화 수준을 높였다.
+> 핵심 설계: ① 제조사와 성적서를 분리하여 성적서를 **이력(여러 건)**으로 누적, ② 알림을 사건/사용자수신/SMS발송 3계층으로 분리, ③ API 원본을 확정 원료와 분리하여 검토 단계를 둠.
+> 모든 테이블에 `updated_at` 자동 갱신 트리거(`haccp_set_updated_at`) 적용(조인 테이블 제외).
+
+#### (1) 제품·인허가·원료 기본
+
+**client_licenses (거래처 인허가번호)**
+- id (BIGSERIAL), client_id (FK → clients.id CASCADE)
+- license_number (필수, 공백 불가), business_type, is_active
+- created_at, updated_at
+- UNIQUE (client_id, license_number)
+- ※ 기존 `clients.biz_types`(v2)는 그대로 유지 — 삭제·변경하지 않음
 
 **products (제품)**
-- id (BIGSERIAL), client_id (FK → clients.id ON DELETE CASCADE)
-- license_number (인허가번호 — 조회 기준)
-- product_name, product_type
-- source ('foodsafetykorea' / 'manual')
-- raw_api_data (JSONB — 식품안전나라 원본 응답)
-- synced_at, created_at
+- id (BIGSERIAL), client_id (FK CASCADE), client_license_id (FK → client_licenses.id SET NULL)
+- product_report_no (식품안전나라 PRDLST_REPORT_NO), product_name (필수), product_type
+- source ('foodsafetykorea' 기본 / 'manual'), raw_api_data (JSONB), is_active, synced_at
+- created_at, updated_at
+- 부분 UNIQUE: (client_id, product_report_no) — product_report_no가 NOT NULL일 때만 (수동 제품 중복 허용)
 
-**materials (원료)**
-- id (BIGSERIAL), client_id (FK → clients.id ON DELETE CASCADE)
-- material_name, origin (원산지), content_ratio (함량)
-- source, created_at
-- UNIQUE (client_id, material_name, origin, content_ratio)
-- ※ 원료 구분 기준: (원료명 + 원산지 + 함량) 조합이 하나라도 다르면 별개 원료
+**materials (확정 원료)**
+- id (BIGSERIAL), client_id (FK CASCADE)
+- material_name (필수), origin (원산지), content_ratio (함량)
+- source ('manual' 기본), created_at, updated_at
+- 동일성 판단 UNIQUE(expression): (client_id, lower(trim(material_name)), lower(trim(coalesce(origin,''))), trim(coalesce(content_ratio,'')))
+- ※ NULL/공백 원산지·함량도 중복 방지되도록 expression index 사용
 
-**material_products (원료↔제품 다대다)**
-- material_id (FK → materials.id ON DELETE CASCADE)
-- product_id (FK → products.id ON DELETE CASCADE)
+**product_raw_materials (식품안전나라 원료 원본 — C002)**
+- id (BIGSERIAL), product_id (FK → products.id CASCADE)
+- raw_material_name (필수), display_order
+- material_id (FK → materials.id SET NULL) — 확정 원료와 연결
+- review_status ('pending' 기본 / 'confirmed' / 'ignored'), raw_api_data (JSONB)
+- imported_at, updated_at
+- 부분 UNIQUE(expression): (product_id, coalesce(display_order,-1), lower(trim(raw_material_name)))
+- ※ API가 원산지/함량을 안 주면 바로 materials로 합치지 않고 pending 상태로 검토 대기
+
+**material_products (확정 원료 ↔ 제품 다대다)**
+- material_id (FK CASCADE), product_id (FK CASCADE), created_at
 - PRIMARY KEY (material_id, product_id)
 
+#### (2) 원료 제조사·성적서
+
 **material_manufacturers (원료 제조사)**
-- id (BIGSERIAL), material_id (FK → materials.id ON DELETE CASCADE)
-- manufacturer_name (필수), memo
-- cert_file_url, cert_file_name (성적서 — Storage 경로)
-- next_cert_date (다음 수령 예정일)
-- alert_1month, alert_15day, alert_1day (boolean)
-- created_at
+- id (BIGSERIAL), material_id (FK → materials.id CASCADE)
+- manufacturer_name (필수), memo, created_at, updated_at
+- UNIQUE(expression): (material_id, lower(trim(manufacturer_name)))
+- ※ 제조사 정보만 보관. 성적서는 아래 별도 테이블
+
+**material_certificates (원료 성적서 이력)**
+- id (BIGSERIAL), material_manufacturer_id (FK CASCADE)
+- cert_file_path (필수, Storage 내부 path만 — Signed URL 아님), cert_file_name (필수)
+- mime_type, file_size_bytes (≥0)
+- received_date, next_cert_date (다음 수령 예정일)
+- alert_1month, alert_15day, alert_1day (boolean), memo
+- created_at, updated_at
+- ※ 한 제조사에 성적서 여러 건 누적. 새 성적서가 과거 걸 덮어쓰지 않음
+
+#### (3) 부자재 제조사·성적서
 
 **packagings (부자재)**
-- id (BIGSERIAL), client_id (FK → clients.id ON DELETE CASCADE)
-- packaging_name (필수), packaging_type (유리/플라스틱/종이/금속 등), memo
-- created_at
+- id (BIGSERIAL), client_id (FK CASCADE)
+- packaging_name (필수), packaging_type, memo, created_at, updated_at
+- UNIQUE(expression): (client_id, lower(trim(packaging_name)), lower(trim(coalesce(packaging_type,''))))
 
-**packaging_products (부자재↔제품 다대다)**
-- packaging_id (FK → packagings.id ON DELETE CASCADE)
-- product_id (FK → products.id ON DELETE CASCADE)
+**packaging_products (부자재 ↔ 제품 다대다)**
+- packaging_id (FK CASCADE), product_id (FK CASCADE), created_at
 - PRIMARY KEY (packaging_id, product_id)
 
-**packaging_certificates (부자재 성적서 — 부자재+제품+제조사 조합당 1개)**
-- id (BIGSERIAL), packaging_id (FK), product_id (FK), manufacturer_name (필수)
-- cert_file_url, cert_file_name, memo
-- next_cert_date, alert_1month, alert_15day, alert_1day
-- created_at
-- UNIQUE (packaging_id, product_id, manufacturer_name)
+**packaging_suppliers (부자재+제품+제조사 조합)**
+- id (BIGSERIAL), packaging_id, product_id, manufacturer_name (필수), memo
+- created_at, updated_at
+- 복합 FK: (packaging_id, product_id) → packaging_products CASCADE
+- UNIQUE(expression): (packaging_id, product_id, lower(trim(manufacturer_name)))
+
+**packaging_certificates (부자재 성적서 이력)**
+- id (BIGSERIAL), packaging_supplier_id (FK → packaging_suppliers.id CASCADE)
+- cert_file_path (필수), cert_file_name (필수), mime_type, file_size_bytes (≥0)
+- received_date, next_cert_date, alert_1month, alert_15day, alert_1day, memo
+- created_at, updated_at
+- ※ 원료와 동일하게 성적서 이력 누적 구조
+
+#### (4) 알림·SMS
 
 **sms_recipients (SMS 수신 번호)**
-- id (BIGSERIAL), phone_number (필수), label, is_active (boolean)
-- created_at
-- ※ RLS: **admin(role='admin')만** 접근 가능
+- id (BIGSERIAL), phone_number (필수), label, is_active, created_at, updated_at
+- UNIQUE (phone_number)
+- CHECK: phone_number ~ `^[0-9]{9,15}$` — **숫자만 저장** (예: 01012345678, 하이픈 금지)
+- ※ RLS: admin(is_active_admin)만 접근
 
-**material_alert_history (원료·부자재 알림 발송 이력)**
+**certificate_alerts (성적서 알림 사건)**
 - id (BIGSERIAL)
-- material_manufacturer_id (FK → material_manufacturers.id ON DELETE CASCADE)
-- packaging_certificate_id (FK → packaging_certificates.id ON DELETE CASCADE)
-- alert_type ('1month' / '15day' / '1day'), channel ('app' / 'sms')
-- sent_at, completed_at
-- CHECK (material_manufacturer_id 또는 packaging_certificate_id 중 하나는 NOT NULL)
+- material_certificate_id (FK SET? → CASCADE), packaging_certificate_id (FK CASCADE) — **둘 중 정확히 하나만** (CHECK: num_nonnulls = 1)
+- alert_type ('1m' / '15d' / '1d'), scheduled_date (필수)
+- status ('pending' 기본 / 'completed' / 'cancelled'), completed_at, created_at
+- 부분 UNIQUE 2종: (material_certificate_id, alert_type, scheduled_date) / (packaging_certificate_id, alert_type, scheduled_date) — 중복 알림 생성 방지
+
+**user_notifications (사용자별 앱 알림 상태)**
+- id (BIGSERIAL), alert_id (FK → certificate_alerts.id CASCADE), user_id (FK → profiles.id CASCADE)
+- is_read, read_at, completed_at, created_at
+- UNIQUE (alert_id, user_id)
+- ※ 한 알림 사건을 담당직원+관리자 등 여러 사용자에게 전달
+
+**sms_send_history (SMS 발송 이력)**
+- id (BIGSERIAL), alert_id (FK CASCADE), sms_recipient_id (FK SET NULL), phone_number (필수)
+- status ('pending' 기본 / 'sent' / 'failed'), provider_message_id, error_message, sent_at, created_at
+- UNIQUE (alert_id, phone_number) — **Cron 재실행 시 중복 SMS 발송 방지**
+- CHECK: phone_number ~ `^[0-9]{9,15}$`
+- ※ INSERT/UPDATE는 Edge Function(service_role) 전용. authenticated에는 SELECT(admin만)만 부여
 
 ---
 
@@ -200,7 +251,9 @@
 **material-certs (v3 신규, Private, Signed URL 방식)**
 - 원료 경로: `{client_id}/materials/{material_id}/{manufacturer}/{timestamp}_{random}.{ext}`
 - 부자재 경로: `{client_id}/packagings/{packaging_id}/{product_id}/{manufacturer}/{timestamp}_{random}.{ext}`
-- 동일하게 Signed URL 방식 사용 (`getPublicUrl` 금지)
+- DB에는 경로만 저장: 원료는 `material_certificates.cert_file_path`, 부자재는 `packaging_certificates.cert_file_path`
+- 표시할 때 `createSignedUrl`(1시간)로 변환 (`getPublicUrl` 금지)
+- Storage 접근 정책: `storage.objects`에 authenticated 대상 SELECT/INSERT/UPDATE/DELETE 정책 4종 설정 완료 (`bucket_id = 'material-certs'` 조건)
 
 ---
 
@@ -225,10 +278,24 @@
 
 ## 8. RLS 정책
 
-- 모든 테이블에 RLS 활성화
-- 기본: `authenticated` 사용자만 SELECT / INSERT / UPDATE / DELETE 가능
-- 예외: `sms_recipients`는 admin(role='admin')만 접근 가능
-- **신규 테이블 생성 시 RLS 정책 설정을 반드시 함께 한다.**
+- 모든 테이블에 RLS 활성화. **신규 테이블 생성 시 RLS 정책 설정을 반드시 함께 한다.**
+- SELECT/INSERT/UPDATE/DELETE를 분리하여 정책을 명시적으로 관리.
+
+**관리자 판별 함수**
+- `private.is_active_admin()` (SECURITY DEFINER, `private` 스키마) — role='admin' AND is_active AND NOT is_deleted 인지 검사.
+- `private` 스키마는 PostgREST에 노출되지 않으므로 API로 직접 호출 불가, RLS 내부 전용.
+
+**테이블별 접근 수준**
+- **일반 업무 테이블** (client_licenses, products, materials, product_raw_materials, material_products, material_manufacturers, material_certificates, packagings, packaging_products, packaging_suppliers, packaging_certificates): authenticated 전체 CRUD.
+- **sms_recipients**: admin만 CRUD.
+- **certificate_alerts**: authenticated SELECT / admin만 INSERT·UPDATE·DELETE (실제 생성은 Cron·Edge Function의 service_role).
+- **user_notifications**: 본인 것만 SELECT·UPDATE (admin은 전체) / admin만 INSERT·DELETE.
+- **sms_send_history**: admin만 SELECT / INSERT·UPDATE는 service_role 전용 (authenticated에 미부여).
+
+**권한(GRANT) 원칙**
+- 모든 신규 테이블에서 `anon` 권한 REVOKE (비로그인 차단).
+- authenticated에는 RLS로 최종 제한되는 범위 내에서 GRANT.
+- `sms_send_history`는 authenticated에 sequence 권한을 주지 않음 (service_role 전용 생성).
 
 ---
 
@@ -295,5 +362,10 @@
 
 ## 13. v3 진행 상태
 
-- [ ] Phase A: 기반 준비 (진행 중)
-- [ ] Phase B ~ I: 대기
+- [x] **Phase A: 기반 준비 완료**
+  - [x] A-1: 신규 테이블 15개 + 인덱스 + RLS + 권한 + updated_at 트리거 (SQL 실행 완료)
+  - [x] A-2: Storage 버킷 `material-certs`(Private) 생성 + 접근 정책 4종
+  - [x] A-3: 본 문서를 실제 실행 구조로 정비
+  - (모듈화는 단일 파일 유지 방침으로 생략)
+- [ ] Phase B: 부자재 관리 (다음 진행 예정)
+- [ ] Phase C ~ I: 대기
