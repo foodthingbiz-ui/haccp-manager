@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.1.0";
+const APP_VERSION = "v2.2.0";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1708,10 +1708,199 @@ function HaccpRecordForm({ category, onAdd, saving, inputStyle, showToast }) {
 // ─── 업종/인허가 유형 태그 입력 컴포넌트 ───
 // ─── 원료·부자재 탭 (컨테이너) ───
 // 이번 단계는 부자재만 구현. 원료 섹션은 Phase C에서 이 위에 추가됨.
+// ─── 원료·부자재 탭 (컨테이너) ───
+// 제품 → (원료 예정) → 부자재 순으로 표시.
 function MaterialPackagingTab({ clientId, showToast }) {
+  // 제품 목록을 상위에서 관리 → 이후 원료/부자재 연결에서 재사용
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+
+  const fetchProducts = useCallback(async () => {
+    setProductsLoading(true);
+    const { data } = await supabase
+      .from("products")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false });
+    setProducts(data || []);
+    setProductsLoading(false);
+  }, [clientId]);
+
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <ProductManagement clientId={clientId} products={products} loading={productsLoading} onRefresh={fetchProducts} showToast={showToast} />
       <PackagingManagement clientId={clientId} showToast={showToast} />
+    </div>
+  );
+}
+
+// ─── 제품 관리 컴포넌트 (수동 등록) ───
+// 식품안전나라 자동 조회는 Phase D에서 이 컴포넌트에 버튼으로 추가됨.
+function ProductManagement({ clientId, products, loading, onRefresh, showToast }) {
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ product_name: "", product_type: "", product_report_no: "" });
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ product_name: "", product_type: "", product_report_no: "" });
+  const [deleteId, setDeleteId] = useState(null);
+
+  const handleAdd = async () => {
+    if (!form.product_name.trim()) return showToast("제품명을 입력해주세요.", "error");
+    setSaving(true);
+    const { error } = await supabase
+      .from("products")
+      .insert([{
+        client_id: clientId,
+        product_name: form.product_name.trim(),
+        product_type: form.product_type.trim() || null,
+        product_report_no: form.product_report_no.trim() || null,
+        source: "manual",
+      }]);
+    if (error) {
+      if (error.code === "23505") showToast("이미 등록된 품목제조보고번호입니다.", "error");
+      else showToast("제품 추가에 실패했습니다.", "error");
+      setSaving(false);
+      return;
+    }
+    setForm({ product_name: "", product_type: "", product_report_no: "" });
+    setShowForm(false);
+    setSaving(false);
+    await onRefresh();
+    showToast("제품이 추가되었습니다.");
+  };
+
+  const startEdit = (p) => {
+    setEditingId(p.id);
+    setEditForm({ product_name: p.product_name, product_type: p.product_type || "", product_report_no: p.product_report_no || "" });
+  };
+
+  const saveEdit = async () => {
+    if (!editForm.product_name.trim()) return showToast("제품명을 입력해주세요.", "error");
+    setSaving(true);
+    const { error } = await supabase
+      .from("products")
+      .update({
+        product_name: editForm.product_name.trim(),
+        product_type: editForm.product_type.trim() || null,
+        product_report_no: editForm.product_report_no.trim() || null,
+      })
+      .eq("id", editingId);
+    if (error) {
+      if (error.code === "23505") showToast("이미 등록된 품목제조보고번호입니다.", "error");
+      else showToast("수정에 실패했습니다.", "error");
+      setSaving(false);
+      return;
+    }
+    setEditingId(null);
+    setSaving(false);
+    await onRefresh();
+    showToast("수정되었습니다.");
+  };
+
+  const handleDelete = async (id) => {
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) { showToast("삭제에 실패했습니다.", "error"); return; }
+    setDeleteId(null);
+    await onRefresh();
+    showToast("제품이 삭제되었습니다.");
+  };
+
+  return (
+    <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", padding: "24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+        <div>
+          <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>제품</h3>
+          <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>총 {products.length}건 · 식품안전나라 자동 조회는 다음 업데이트에서 추가됩니다</p>
+        </div>
+        <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+          {showForm ? "취소" : "+ 제품 추가"}
+        </button>
+      </div>
+
+      {/* 추가 폼 */}
+      {showForm && (
+        <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
+          <div style={{ display: "grid", gap: "12px" }}>
+            <div>
+              <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>제품명 *</label>
+              <input value={form.product_name} onChange={e => setForm({ ...form, product_name: e.target.value })} style={inputStyle} placeholder="예: 삼진 간장" />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>제품 유형</label>
+                <input value={form.product_type} onChange={e => setForm({ ...form, product_type: e.target.value })} style={inputStyle} placeholder="예: 간장, 된장" />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>품목제조보고번호</label>
+                <input value={form.product_report_no} onChange={e => setForm({ ...form, product_report_no: e.target.value })} style={inputStyle} placeholder="선택 (있으면 입력)" />
+              </div>
+            </div>
+            <button onClick={handleAdd} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px", fontSize: "13px", fontWeight: 600, cursor: "pointer", opacity: saving ? 0.6 : 1, width: "100%" }}>{saving ? "저장 중..." : "+ 추가"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* 목록 */}
+      {loading ? (
+        <LoadingSpinner message="제품 목록 로딩 중..." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {products.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>등록된 제품이 없습니다.</p>}
+          {products.map(p => (
+            <div key={p.id} style={{ background: editingId === p.id ? "#fff" : "#f8fafc", borderRadius: "12px", padding: "14px 16px", border: editingId === p.id ? "2px solid #1a1a2e" : "1px solid #e8ecf2" }}>
+              {editingId === p.id ? (
+                /* 수정 모드 */
+                <div style={{ display: "grid", gap: "10px" }}>
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>제품명 *</label>
+                    <input value={editForm.product_name} onChange={e => setEditForm({ ...editForm, product_name: e.target.value })} style={inputStyle} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                    <div>
+                      <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>제품 유형</label>
+                      <input value={editForm.product_type} onChange={e => setEditForm({ ...editForm, product_type: e.target.value })} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>품목제조보고번호</label>
+                      <input value={editForm.product_report_no} onChange={e => setEditForm({ ...editForm, product_report_no: e.target.value })} style={inputStyle} />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: "9px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
+                    <button onClick={saveEdit} disabled={saving} style={{ flex: 1, padding: "9px", border: "none", borderRadius: "10px", background: "#0f766e", color: "white", fontSize: "13px", cursor: "pointer", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "저장 중..." : "수정 완료"}</button>
+                  </div>
+                </div>
+              ) : (
+                /* 보기 모드 */
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "14px", fontWeight: 700, color: "#1a1a2e" }}>{p.product_name}</span>
+                      {p.product_type && <span style={{ fontSize: "11px", padding: "2px 10px", borderRadius: "6px", background: "#ede9fe", color: "#7c3aed", fontWeight: 600 }}>{p.product_type}</span>}
+                      {p.source === "foodsafetykorea" && <span style={{ fontSize: "11px", padding: "2px 10px", borderRadius: "6px", background: "#e0f2fe", color: "#0284c7", fontWeight: 600 }}>식품안전나라</span>}
+                    </div>
+                    {p.product_report_no && <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>품목제조보고번호: {p.product_report_no}</div>}
+                  </div>
+                  {deleteId === p.id ? (
+                    <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
+                      <span style={{ fontSize: "12px", color: "#991b1b", fontWeight: 600 }}>삭제?</span>
+                      <button onClick={() => handleDelete(p.id)} style={{ background: "#dc2626", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "white", cursor: "pointer", fontWeight: 600 }}>예</button>
+                      <button onClick={() => setDeleteId(null)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>아니오</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                      <button onClick={() => startEdit(p)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>수정</button>
+                      <button onClick={() => setDeleteId(p.id)} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "16px", cursor: "pointer", padding: "2px 6px" }}>✕</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1802,8 +1991,7 @@ function PackagingManagement({ clientId, showToast }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
         <div>
           <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>부자재</h3>
-          <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>총 {packagings.length}건 · 제조사/성적서 관리는 다음 업데이트에서 추가됩니다</p>
-        </div>
+          <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>총 {packagings.length}건 · 제품 연결·제조사·성적서는 다음 업데이트에서 추가됩니다</p>        </div>
         <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
           {showForm ? "취소" : "+ 부자재 추가"}
         </button>
