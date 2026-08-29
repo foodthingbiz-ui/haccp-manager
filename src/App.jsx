@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.4.1";
+const APP_VERSION = "v2.4.2";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -679,10 +679,6 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
   if (!client) return null;
 
   // 임시저장된 작성 내용이 있으면 상담기록 폼을 자동으로 펼침
-  if (newRecord.content && newRecord.content.trim() && !showRecordForm && activeTab === "records") {
-    setShowRecordForm(true);
-  }
-
   const handleSaveRecord = async () => {
     if (!newRecord.content.trim()) return;
     setSaving(true);
@@ -727,6 +723,14 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
     await onUpdateRecord(client.id, editingRecordId, editRecordData);
     setEditingRecordId(null);
     setEditRecordData({ date: "", type: "", content: "" });
+    setSaving(false);
+  };
+
+  const [deleteRecordId, setDeleteRecordId] = useState(null);
+  const handleDeleteRecord = async () => {
+    setSaving(true);
+    await onDeleteRecord(client.id, deleteRecordId);
+    setDeleteRecordId(null);
     setSaving(false);
   };
 
@@ -1028,18 +1032,12 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>상담 기록</h3>
-            <div style={{ display: "flex", gap: "6px" }}>
-              {newRecord.content && newRecord.content.trim() && (
-                <button onClick={() => { if (window.confirm("작성 중인 내용을 지우시겠습니까?")) { setNewRecord({ date: new Date().toISOString().split("T")[0], type: "상담", content: "" }); try { localStorage.removeItem(draftKey); } catch { /* 무시 */ } setShowRecordForm(false); } }} style={{ background: "#fee2e2", color: "#991b1b", border: "none", borderRadius: "10px", padding: "8px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>작성 내용 지우기</button>
-              )}
-              <button onClick={() => setShowRecordForm(!showRecordForm)} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-                {showRecordForm ? "접기" : "+ 기록 추가"}
-              </button>
-            </div>
+            {newRecord.content && newRecord.content.trim() && (
+              <button onClick={() => { if (window.confirm("작성 중인 내용을 지우시겠습니까?")) { setNewRecord({ date: new Date().toISOString().split("T")[0], type: "상담", content: "" }); try { localStorage.removeItem(draftKey); } catch { /* 무시 */ } } }} style={{ background: "#fee2e2", color: "#991b1b", border: "none", borderRadius: "10px", padding: "8px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>작성 내용 지우기</button>
+            )}
           </div>
 
-          {showRecordForm && (
-            <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
+          <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
                 <div>
                   <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>날짜</label>
@@ -1054,12 +1052,10 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
               </div>
               <div style={{ marginBottom: "12px" }}>
                 <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>내용</label>
-                <textarea value={newRecord.content} onChange={e => setNewRecord({ ...newRecord, content: e.target.value })} placeholder="상담 내용을 입력하세요...&#10;엔터를 눌러 줄을 바꿀 수 있습니다&#10;작성 중 다른 탭으로 이동해도 내용이 자동 보관됩니다" rows={10} style={{ ...inputStyle, resize: "vertical", minHeight: "220px", lineHeight: "1.6" }} />
+                <textarea value={newRecord.content} onChange={e => setNewRecord({ ...newRecord, content: e.target.value })} placeholder="상담 내용을 입력하세요...&#10;엔터를 눌러 줄을 바꿀 수 있습니다&#10;작성 중 다른 탭으로 이동해도 내용이 자동 보관됩니다" rows={6} style={{ ...inputStyle, resize: "vertical", minHeight: "140px", lineHeight: "1.6" }} />
               </div>
               <button onClick={handleSaveRecord} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", width: "100%", opacity: saving ? 0.6 : 1 }}>{saving ? "저장 중..." : "저장"}</button>
             </div>
-          )}
-
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             {client.records.length === 0 && <p style={{ color: "#94a3b8", fontSize: "14px", textAlign: "center", padding: "32px 0" }}>아직 기록이 없습니다.</p>}
             {client.records.map((r) => (
@@ -1094,7 +1090,17 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
                       <span style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a2e" }}>{r.type}</span>
                       <span style={{ fontSize: "12px", color: "#94a3b8", marginLeft: "auto" }}>{formatDate(r.date)}</span>
                       <button onClick={() => startEditRecord(r)} style={{ background: "#f1f5f9", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#64748b", cursor: "pointer", fontWeight: 600, marginLeft: "4px" }}>수정</button>
+                      <button onClick={() => setDeleteRecordId(r.id)} style={{ background: "#fee2e2", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "#991b1b", cursor: "pointer", fontWeight: 600 }}>삭제</button>
                     </div>
+                    {deleteRecordId === r.id && (
+                      <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: "10px", padding: "12px", marginBottom: "10px" }}>
+                        <div style={{ fontSize: "13px", color: "#991b1b", fontWeight: 600, marginBottom: "8px" }}>이 상담기록({formatDate(r.date)})을 삭제하시겠습니까? 되돌릴 수 없습니다.</div>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button onClick={() => setDeleteRecordId(null)} style={{ flex: 1, padding: "8px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "white", fontSize: "12px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
+                          <button onClick={handleDeleteRecord} disabled={saving} style={{ flex: 1, padding: "8px", border: "none", borderRadius: "8px", background: "#dc2626", color: "white", fontSize: "12px", cursor: "pointer", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "삭제 중..." : "삭제하기"}</button>
+                        </div>
+                      </div>
+                    )}
                     <p style={{ fontSize: "14px", color: "#475569", margin: 0, lineHeight: "1.7", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "71.4px", overflowY: "auto", paddingRight: "4px" }}>{r.content}</p>
                   </div>
                 )}
