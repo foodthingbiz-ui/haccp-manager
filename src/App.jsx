@@ -650,7 +650,7 @@ function ClientList({ clients, onNavigate, onAdd, onExport, onImport, searchInpu
 }
 
 // ─── 거래처 상세 ───
-function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDelete, userRole, showToast }) {
+function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDeleteRecord, onDelete, userRole, showToast }) {
   const [activeTab, setActiveTab] = useState("info");
     const draftKey = `recordDraft_${client.id}`;
   const [showRecordForm, setShowRecordForm] = useState(false);
@@ -3418,6 +3418,7 @@ export default function App() {
       }
 
       // 화면 즉시 반영
+      // 화면 즉시 반영
       setClients(prev => prev.map(c => {
         if (c.id !== clientId) return c;
         return {
@@ -3426,6 +3427,26 @@ export default function App() {
         };
       }));
       showToast("상담 기록이 수정되었습니다.");
+    } catch (err) {
+      console.error("네트워크 오류:", err);
+      showToast("네트워크 연결을 확인해주세요.", "error");
+    }
+  };
+
+  // ── 상담 기록 삭제 (DB에서 삭제) ──
+  const handleDeleteRecord = async (clientId, recordId) => {
+    try {
+      const { error } = await supabase.from("records").delete().eq("id", recordId);
+      if (error) {
+        console.error("기록 삭제 실패:", error);
+        showToast("상담 기록 삭제에 실패했습니다.", "error");
+        return;
+      }
+      setClients(prev => prev.map(c => {
+        if (c.id !== clientId) return c;
+        return { ...c, records: c.records.filter(r => r.id !== recordId) };
+      }));
+      showToast("상담 기록이 삭제되었습니다.");
     } catch (err) {
       console.error("네트워크 오류:", err);
       showToast("네트워크 연결을 확인해주세요.", "error");
@@ -3703,7 +3724,8 @@ export default function App() {
         ) : (
           <>
             {view === "dashboard" && <Dashboard clients={clients} onNavigate={navigate} />}
-            {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} onExport={handleExport} onImport={handleImport} searchInputRef={searchInputRef} />}            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDelete={handleDeleteClient} userRole={userRole} showToast={showToast} />}
+            {view === "list" && <ClientList clients={clients} onNavigate={navigate} onAdd={() => setShowAddModal(true)} onExport={handleExport} onImport={handleImport} searchInputRef={searchInputRef} />}
+            {view === "detail" && <ClientDetail client={selectedClient} onBack={() => navigate("list")} onUpdate={handleUpdateClient} onAddRecord={handleAddRecord} onUpdateRecord={handleUpdateRecord} onDeleteRecord={handleDeleteRecord} onDelete={handleDeleteClient} userRole={userRole} showToast={showToast} />}
             {view === "staff" && userRole === "admin" && <StaffManagement showToast={showToast} />}
           </>
         )}
