@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.4.0";
+const APP_VERSION = "v2.4.1";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -652,8 +652,23 @@ function ClientList({ clients, onNavigate, onAdd, onExport, onImport, searchInpu
 // ─── 거래처 상세 ───
 function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDelete, userRole, showToast }) {
   const [activeTab, setActiveTab] = useState("info");
+    const draftKey = `recordDraft_${client.id}`;
   const [showRecordForm, setShowRecordForm] = useState(false);
-  const [newRecord, setNewRecord] = useState({ date: new Date().toISOString().split("T")[0], type: "상담", content: "" });
+  const [newRecord, setNewRecord] = useState(() => {
+    // 작성 중이던 임시 내용이 있으면 복원
+    try {
+      const saved = localStorage.getItem(draftKey);
+      if (saved) return JSON.parse(saved);
+    } catch { /* 무시 */ }
+    return { date: new Date().toISOString().split("T")[0], type: "상담", content: "" };
+  });
+
+  // 작성 중 내용이 바뀔 때마다 임시 저장 (내용이 있을 때만)
+  useEffect(() => {
+    if (newRecord.content && newRecord.content.trim()) {
+      try { localStorage.setItem(draftKey, JSON.stringify(newRecord)); } catch { /* 무시 */ }
+    }
+  }, [newRecord, draftKey]);
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({ ...client });
   const [editingRecordId, setEditingRecordId] = useState(null);
@@ -663,11 +678,17 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
 
   if (!client) return null;
 
+  // 임시저장된 작성 내용이 있으면 상담기록 폼을 자동으로 펼침
+  if (newRecord.content && newRecord.content.trim() && !showRecordForm && activeTab === "records") {
+    setShowRecordForm(true);
+  }
+
   const handleSaveRecord = async () => {
     if (!newRecord.content.trim()) return;
     setSaving(true);
     await onAddRecord(client.id, newRecord);
     setNewRecord({ date: new Date().toISOString().split("T")[0], type: "상담", content: "" });
+    try { localStorage.removeItem(draftKey); } catch { /* 무시 */ }
     setShowRecordForm(false);
     setSaving(false);
   };
@@ -1007,9 +1028,14 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>상담 기록</h3>
-            <button onClick={() => setShowRecordForm(!showRecordForm)} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-              {showRecordForm ? "취소" : "+ 기록 추가"}
-            </button>
+            <div style={{ display: "flex", gap: "6px" }}>
+              {newRecord.content && newRecord.content.trim() && (
+                <button onClick={() => { if (window.confirm("작성 중인 내용을 지우시겠습니까?")) { setNewRecord({ date: new Date().toISOString().split("T")[0], type: "상담", content: "" }); try { localStorage.removeItem(draftKey); } catch { /* 무시 */ } setShowRecordForm(false); } }} style={{ background: "#fee2e2", color: "#991b1b", border: "none", borderRadius: "10px", padding: "8px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>작성 내용 지우기</button>
+              )}
+              <button onClick={() => setShowRecordForm(!showRecordForm)} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+                {showRecordForm ? "접기" : "+ 기록 추가"}
+              </button>
+            </div>
           </div>
 
           {showRecordForm && (
@@ -1028,7 +1054,7 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
               </div>
               <div style={{ marginBottom: "12px" }}>
                 <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>내용</label>
-                <textarea value={newRecord.content} onChange={e => setNewRecord({ ...newRecord, content: e.target.value })} placeholder="상담 내용을 입력하세요...&#10;엔터를 눌러 줄을 바꿀 수 있습니다" rows={5} style={{ ...inputStyle, resize: "vertical" }} />
+                <textarea value={newRecord.content} onChange={e => setNewRecord({ ...newRecord, content: e.target.value })} placeholder="상담 내용을 입력하세요...&#10;엔터를 눌러 줄을 바꿀 수 있습니다&#10;작성 중 다른 탭으로 이동해도 내용이 자동 보관됩니다" rows={10} style={{ ...inputStyle, resize: "vertical", minHeight: "220px", lineHeight: "1.6" }} />
               </div>
               <button onClick={handleSaveRecord} disabled={saving} style={{ background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px 20px", fontSize: "14px", fontWeight: 600, cursor: "pointer", width: "100%", opacity: saving ? 0.6 : 1 }}>{saving ? "저장 중..." : "저장"}</button>
             </div>
@@ -1054,7 +1080,7 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
                     </div>
                     <div style={{ marginBottom: "12px" }}>
                       <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "4px" }}>내용</label>
-                      <textarea value={editRecordData.content} onChange={e => setEditRecordData({ ...editRecordData, content: e.target.value })} rows={5} style={{ ...inputStyle, resize: "vertical" }} />
+                      <textarea value={editRecordData.content} onChange={e => setEditRecordData({ ...editRecordData, content: e.target.value })} rows={10} style={{ ...inputStyle, resize: "vertical", minHeight: "220px", lineHeight: "1.6" }} />
                     </div>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button onClick={cancelEditRecord} style={{ flex: 1, padding: "9px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white", fontSize: "13px", cursor: "pointer", color: "#64748b", fontWeight: 600 }}>취소</button>
