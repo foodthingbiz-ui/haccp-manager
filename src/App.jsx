@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.4.3";
+const APP_VERSION = "v2.5.3";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1789,6 +1789,65 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
   const [editForm, setEditForm] = useState({ product_name: "", product_type: "", product_report_no: "" });
   const [deleteId, setDeleteId] = useState(null);
 
+  // 붙여넣기 일괄 등록
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteRows, setPasteRows] = useState([]); // 미리보기 파싱 결과
+  const [pasteSaving, setPasteSaving] = useState(false);
+
+  // 붙여넣은 텍스트를 줄/탭으로 분해 → 미리보기용 배열 생성
+  const parsePaste = (text) => {
+    const existingNos = new Set(products.map(p => (p.product_report_no || "").trim()).filter(Boolean));
+    const seen = new Set();
+    const rows = [];
+    text.split("\n").forEach((line) => {
+      if (!line.trim()) return;
+      // 탭 우선, 없으면 2칸 이상 공백으로도 분리 시도
+      let cols = line.includes("\t") ? line.split("\t") : line.split(/\s{2,}/);
+      cols = cols.map(c => c.trim());
+      const [reportNo = "", type = "", name = "", date = ""] = cols;
+      let status = "ok";
+      let reason = "";
+      if (!reportNo || !name) { status = "error"; reason = "품목번호 또는 제품명 없음"; }
+      else if (existingNos.has(reportNo)) { status = "dup"; reason = "이미 등록됨"; }
+      else if (seen.has(reportNo)) { status = "dup"; reason = "붙여넣기 내 중복"; }
+      // 날짜 형식 정리 (YYYY-MM-DD만 인정, 아니면 비움)
+      const dateOk = /^\d{4}-\d{2}-\d{2}$/.test(date);
+      if (reportNo) seen.add(reportNo);
+      rows.push({ reportNo, type, name, date: dateOk ? date : "", rawDate: date, status, reason });
+    });
+    return rows;
+  };
+
+  const handlePasteChange = (text) => {
+    setPasteText(text);
+    setPasteRows(text.trim() ? parsePaste(text) : []);
+  };
+
+  const savePasteRows = async () => {
+    const toSave = pasteRows.filter(r => r.status === "ok");
+    if (toSave.length === 0) return showToast("등록할 항목이 없습니다.", "error");
+    setPasteSaving(true);
+    const payload = toSave.map(r => ({
+      client_id: clientId,
+      product_name: r.name,
+      product_type: r.type || null,
+      product_report_no: r.reportNo || null,
+      report_date: r.date || null,
+      source: "manual",
+    }));
+    const { error } = await supabase.from("products").insert(payload);
+    if (error) {
+      showToast("일괄 등록에 실패했습니다.", "error");
+      setPasteSaving(false);
+      return;
+    }
+    setPasteText(""); setPasteRows([]); setShowPaste(false);
+    setPasteSaving(false);
+    await onRefresh();
+    showToast(`${toSave.length}건 등록되었습니다.`);
+  };
+
   const handleAdd = async () => {
     if (!form.product_name.trim()) return showToast("제품명을 입력해주세요.", "error");
     setSaving(true);
@@ -1857,10 +1916,79 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
           <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>제품</h3>
           <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>총 {products.length}건 · 식품안전나라 자동 조회는 다음 업데이트에서 추가됩니다</p>
         </div>
-        <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-          {showForm ? "취소" : "+ 제품 추가"}
-        </button>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button onClick={() => { setShowPaste(!showPaste); setShowForm(false); setEditingId(null); }} style={{ background: showPaste ? "#f1f5f9" : "#0f766e", color: showPaste ? "#64748b" : "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+            {showPaste ? "취소" : "📋 붙여넣기로 추가"}
+          </button>
+          <button onClick={() => { setShowForm(!showForm); setShowPaste(false); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+            {showForm ? "취소" : "+ 제품 추가"}
+          </button>
+        </div>    
       </div>
+
+      {/* 붙여넣기 일괄 등록 */}
+      {showPaste && (
+        <div style={{ background: "#f0fdfa", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #99f6e4" }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f766e", marginBottom: "6px" }}>식품안전나라에서 복사한 내용 붙여넣기</div>
+          <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "10px", lineHeight: 1.6 }}>
+            품목번호 · 식품유형 · 제품명 · 일자 순서로 된 표를 드래그 복사해서 아래에 붙여넣으세요. 여러 줄을 한 번에 넣을 수 있습니다.
+          </div>
+          <textarea
+            value={pasteText}
+            onChange={e => handlePasteChange(e.target.value)}
+            rows={6}
+            style={{ ...inputStyle, resize: "vertical", minHeight: "120px", fontFamily: "monospace", fontSize: "12px" }}
+            placeholder={"2001044321887\t과.채가공품\t느타리버섯\t2025-12-22\n2001044321885\t과.채가공품\t사과\t2025-11-21"}
+          />
+
+          {/* 미리보기 */}
+          {pasteRows.length > 0 && (() => {
+            const okCount = pasteRows.filter(r => r.status === "ok").length;
+            const dupCount = pasteRows.filter(r => r.status === "dup").length;
+            const errCount = pasteRows.filter(r => r.status === "error").length;
+            return (
+              <div style={{ marginTop: "12px" }}>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
+                  <span style={{ fontSize: "12px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", background: "#d1fae5", color: "#065f46" }}>신규 {okCount}건</span>
+                  {dupCount > 0 && <span style={{ fontSize: "12px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", background: "#fef3c7", color: "#92400e" }}>중복 제외 {dupCount}건</span>}
+                  {errCount > 0 && <span style={{ fontSize: "12px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", background: "#fee2e2", color: "#991b1b" }}>오류 {errCount}건</span>}
+                </div>
+                <div style={{ maxHeight: "260px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "10px", background: "white" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                    <thead>
+                      <tr style={{ position: "sticky", top: 0, background: "#f8fafc" }}>
+                        <th style={{ padding: "8px 10px", textAlign: "left", color: "#64748b", borderBottom: "1px solid #e2e8f0" }}>품목번호</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", color: "#64748b", borderBottom: "1px solid #e2e8f0" }}>유형</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", color: "#64748b", borderBottom: "1px solid #e2e8f0" }}>제품명</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", color: "#64748b", borderBottom: "1px solid #e2e8f0" }}>일자</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", color: "#64748b", borderBottom: "1px solid #e2e8f0" }}>상태</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pasteRows.map((r, i) => (
+                        <tr key={i} style={{ background: r.status === "error" ? "#fef2f2" : r.status === "dup" ? "#fffbeb" : "white" }}>
+                          <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f5f9" }}>{r.reportNo || "-"}</td>
+                          <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f5f9" }}>{r.type || "-"}</td>
+                          <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f5f9" }}>{r.name || "-"}</td>
+                          <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f5f9", color: !r.date && r.rawDate ? "#dc2626" : "#1a1a2e" }}>{r.date || (r.rawDate ? `${r.rawDate}(형식오류)` : "-")}</td>
+                          <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f5f9" }}>
+                            {r.status === "ok" && <span style={{ color: "#065f46" }}>등록</span>}
+                            {r.status === "dup" && <span style={{ color: "#92400e" }}>{r.reason}</span>}
+                            {r.status === "error" && <span style={{ color: "#991b1b" }}>{r.reason}</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button onClick={savePasteRows} disabled={pasteSaving || okCount === 0} style={{ marginTop: "12px", width: "100%", background: "#0f766e", color: "white", border: "none", borderRadius: "10px", padding: "10px", fontSize: "13px", fontWeight: 600, cursor: okCount === 0 ? "not-allowed" : "pointer", opacity: (pasteSaving || okCount === 0) ? 0.6 : 1 }}>
+                  {pasteSaving ? "등록 중..." : `${okCount}건 등록`}
+                </button>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* 추가 폼 */}
       {showForm && (
@@ -1924,7 +2052,7 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
                       {p.product_type && <span style={{ fontSize: "11px", padding: "2px 10px", borderRadius: "6px", background: "#ede9fe", color: "#7c3aed", fontWeight: 600 }}>{p.product_type}</span>}
                       {p.source === "foodsafetykorea" && <span style={{ fontSize: "11px", padding: "2px 10px", borderRadius: "6px", background: "#e0f2fe", color: "#0284c7", fontWeight: 600 }}>식품안전나라</span>}
                     </div>
-                    {p.product_report_no && <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>품목제조보고번호: {p.product_report_no}</div>}
+                      {(p.product_report_no || p.report_date) && <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>{p.product_report_no ? `품목제조보고번호: ${p.product_report_no}` : ""}{p.product_report_no && p.report_date ? " · " : ""}{p.report_date ? `일자: ${formatDate(p.report_date)}` : ""}</div>}
                   </div>
                   {deleteId === p.id ? (
                     <div style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
