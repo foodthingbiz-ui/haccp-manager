@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.5.1";
+const APP_VERSION = "v2.5.2";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -652,7 +652,7 @@ function ClientList({ clients, onNavigate, onAdd, onExport, onImport, searchInpu
 // ─── 거래처 상세 ───
 function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDeleteRecord, onDelete, userRole, showToast }) {
   const [activeTab, setActiveTab] = useState(() => {
-    // 작성 중이던 상담기록 임시저장이 있으면 상담기록 탭으로 시작
+    // 1순위: 작성 중이던 상담기록 임시저장이 있으면 상담기록 탭
     try {
       const saved = localStorage.getItem(`recordDraft_${client.id}`);
       if (saved) {
@@ -660,8 +660,18 @@ function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, o
         if (d && d.content && d.content.trim()) return "records";
       }
     } catch { /* 무시 */ }
+    // 2순위: 이 거래처에서 마지막으로 보던 탭
+    try {
+      const lastTab = localStorage.getItem(`lastTab_${client.id}`);
+      if (lastTab) return lastTab;
+    } catch { /* 무시 */ }
     return "info";
   });
+
+  // 탭이 바뀔 때마다 이 거래처의 마지막 탭 저장
+  useEffect(() => {
+    try { localStorage.setItem(`lastTab_${client.id}`, activeTab); } catch { /* 무시 */ }
+  }, [activeTab, client.id]);
   const draftKey = `recordDraft_${client.id}`;
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [newRecord, setNewRecord] = useState(() => {
@@ -3318,8 +3328,15 @@ export default function App() {
   const [userRole, setUserRole] = useState("staff");
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("dashboard");
-  const [selectedId, setSelectedId] = useState(null);
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem("lastView") || "dashboard"; } catch { return "dashboard"; }
+  });
+  const [selectedId, setSelectedId] = useState(() => {
+    try {
+      const v = localStorage.getItem("lastSelectedId");
+      return v ? Number(v) : null;
+    } catch { return null; }
+  });
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
@@ -3465,8 +3482,23 @@ export default function App() {
     if (session) fetchClients();
   }, [session, fetchClients]);
 
+  // 복원하려던 상세 화면의 거래처가 존재하지 않으면 목록으로 되돌림
+  useEffect(() => {
+    if (!loading && view === "detail" && selectedId != null && !clients.find(c => c.id === selectedId)) {
+      setView("list");
+    }
+  }, [loading, view, selectedId, clients]);
+
   const navigate = (v, id) => { setView(v); if (id) setSelectedId(id); };
   const selectedClient = clients.find(c => c.id === selectedId);
+
+  // 현재 보던 화면 위치를 저장 (새로고침·복귀 시 복원용)
+  useEffect(() => {
+    try {
+      localStorage.setItem("lastView", view);
+      if (selectedId != null) localStorage.setItem("lastSelectedId", String(selectedId));
+    } catch { /* 무시 */ }
+  }, [view, selectedId]);
 
   // ── 거래처 추가 (DB에 저장) ──
   const handleAddClient = async (formData) => {
