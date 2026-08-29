@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.4.2";
+const APP_VERSION = "v2.4.3";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -651,8 +651,18 @@ function ClientList({ clients, onNavigate, onAdd, onExport, onImport, searchInpu
 
 // ─── 거래처 상세 ───
 function ClientDetail({ client, onBack, onUpdate, onAddRecord, onUpdateRecord, onDeleteRecord, onDelete, userRole, showToast }) {
-  const [activeTab, setActiveTab] = useState("info");
-    const draftKey = `recordDraft_${client.id}`;
+  const [activeTab, setActiveTab] = useState(() => {
+    // 작성 중이던 상담기록 임시저장이 있으면 상담기록 탭으로 시작
+    try {
+      const saved = localStorage.getItem(`recordDraft_${client.id}`);
+      if (saved) {
+        const d = JSON.parse(saved);
+        if (d && d.content && d.content.trim()) return "records";
+      }
+    } catch { /* 무시 */ }
+    return "info";
+  });
+  const draftKey = `recordDraft_${client.id}`;
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [newRecord, setNewRecord] = useState(() => {
     // 작성 중이던 임시 내용이 있으면 복원
