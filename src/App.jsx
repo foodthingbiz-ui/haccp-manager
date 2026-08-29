@@ -2133,10 +2133,11 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast, 
           ))}
         </div>
       )}
+      </>
+      )}
     </div>
   );
 }
-
 // ─── 부자재 관리 컴포넌트 ───
 // ─── 원료 관리 컴포넌트 ───
 // 원료 구분 기준: (원료명 + 원산지 + 함량). 하나라도 다르면 별개 원료.
