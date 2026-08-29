@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.5.2";
+const APP_VERSION = "v2.5.3";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1780,18 +1780,34 @@ function MaterialPackagingTab({ clientId, showToast }) {
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
+    // 섹션 접기/펼치기 상태 (거래처별로 기억)
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`mpCollapsed_${clientId}`);
+      if (saved) return JSON.parse(saved);
+    } catch { /* 무시 */ }
+    return { product: false, material: false, packaging: false };
+  });
+  const toggleSection = (key) => {
+    setCollapsed(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem(`mpCollapsed_${clientId}`, JSON.stringify(next)); } catch { /* 무시 */ }
+      return next;
+    });
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      <ProductManagement clientId={clientId} products={products} loading={productsLoading} onRefresh={fetchProducts} showToast={showToast} />
-      <MaterialManagement clientId={clientId} products={products} showToast={showToast} />
-      <PackagingManagement clientId={clientId} showToast={showToast} />
+      <ProductManagement clientId={clientId} products={products} loading={productsLoading} onRefresh={fetchProducts} showToast={showToast} collapsed={collapsed.product} onToggleCollapse={() => toggleSection("product")} />
+      <MaterialManagement clientId={clientId} products={products} showToast={showToast} collapsed={collapsed.material} onToggleCollapse={() => toggleSection("material")} />
+      <PackagingManagement clientId={clientId} showToast={showToast} collapsed={collapsed.packaging} onToggleCollapse={() => toggleSection("packaging")} />
     </div>
   );
 }
 
 // ─── 제품 관리 컴포넌트 (수동 등록) ───
 // 식품안전나라 자동 조회는 Phase D에서 이 컴포넌트에 버튼으로 추가됨.
-function ProductManagement({ clientId, products, loading, onRefresh, showToast }) {
+function ProductManagement({ clientId, products, loading, onRefresh, showToast, collapsed, onToggleCollapse }) {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ product_name: "", product_type: "", product_report_no: "" });
@@ -1935,12 +1951,15 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
 
   return (
     <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", padding: "24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <div>
-          <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>제품</h3>
-          <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>총 {products.length}건 · 식품안전나라 자동 조회는 다음 업데이트에서 추가됩니다</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: collapsed ? 0 : "16px" }}>
+        <div onClick={onToggleCollapse} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "8px", flex: 1 }}>
+          <span style={{ fontSize: "14px", color: "#94a3b8", transition: "transform 0.2s", display: "inline-block", transform: collapsed ? "rotate(0)" : "rotate(90deg)" }}>▶</span>
+          <div>
+            <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>제품 <span style={{ fontSize: "13px", color: "#94a3b8", fontWeight: 600 }}>({products.length})</span></h3>
+            {!collapsed && <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>식품안전나라 자동 조회는 다음 업데이트에서 추가됩니다</p>}
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "6px" }}>
+        <div style={{ display: "flex", gap: "6px", display: collapsed ? "none" : "flex" }}>
           <button onClick={() => { setShowPaste(!showPaste); setShowForm(false); setEditingId(null); }} style={{ background: showPaste ? "#f1f5f9" : "#0f766e", color: showPaste ? "#64748b" : "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
             {showPaste ? "취소" : "📋 붙여넣기로 추가"}
           </button>
@@ -1950,6 +1969,8 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
         </div>    
       </div>
 
+      {!collapsed && (
+      <>
       {/* 붙여넣기 일괄 등록 */}
       {showPaste && (
         <div style={{ background: "#f0fdfa", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #99f6e4" }}>
@@ -2120,7 +2141,7 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
 // ─── 원료 관리 컴포넌트 ───
 // 원료 구분 기준: (원료명 + 원산지 + 함량). 하나라도 다르면 별개 원료.
 // 등록 시 사용 제품을 체크하면 material_products로 연결. 제조사·성적서는 Phase C-3.
-function MaterialManagement({ clientId, products, showToast }) {
+function MaterialManagement({ clientId, products, showToast, collapsed, onToggleCollapse }) {
   const [materials, setMaterials] = useState([]);      // 원료 + 연결 제품 정보 포함
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -2271,16 +2292,23 @@ function MaterialManagement({ clientId, products, showToast }) {
 
   return (
     <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", padding: "24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <div>
-          <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>원료</h3>
-          <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>총 {materials.length}건 · 원료명·원산지·함량이 다르면 별개 원료 · 제조사·성적서는 다음 업데이트</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: collapsed ? 0 : "16px" }}>
+        <div onClick={onToggleCollapse} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "8px", flex: 1 }}>
+          <span style={{ fontSize: "14px", color: "#94a3b8", transition: "transform 0.2s", display: "inline-block", transform: collapsed ? "rotate(0)" : "rotate(90deg)" }}>▶</span>
+          <div>
+            <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>원료 <span style={{ fontSize: "13px", color: "#94a3b8", fontWeight: 600 }}>({materials.length})</span></h3>
+            {!collapsed && <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>원료명·원산지·함량이 다르면 별개 원료</p>}
+          </div>
         </div>
-        <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-          {showForm ? "취소" : "+ 원료 추가"}
-        </button>
+        {!collapsed && (
+          <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+            {showForm ? "취소" : "+ 원료 추가"}
+          </button>
+        )}
       </div>
 
+      {!collapsed && (
+      <>
       {/* 추가 폼 */}
       {showForm && (
         <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
@@ -2628,7 +2656,7 @@ function MaterialManufacturers({ materialId, showToast }) {
 }
 
 // ─── 부자재 관리 컴포넌트 ───
-function PackagingManagement({ clientId, showToast }) {  
+function PackagingManagement({ clientId, showToast, collapsed, onToggleCollapse }) {
   const [packagings, setPackagings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -2710,15 +2738,22 @@ function PackagingManagement({ clientId, showToast }) {
 
   return (
     <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e8ecf2", padding: "24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <div>
-          <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>부자재</h3>
-          <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>총 {packagings.length}건 · 제품 연결·제조사·성적서는 다음 업데이트에서 추가됩니다</p>        </div>
-        <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
-          {showForm ? "취소" : "+ 부자재 추가"}
-        </button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: collapsed ? 0 : "16px" }}>
+        <div onClick={onToggleCollapse} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "8px", flex: 1 }}>
+          <span style={{ fontSize: "14px", color: "#94a3b8", transition: "transform 0.2s", display: "inline-block", transform: collapsed ? "rotate(0)" : "rotate(90deg)" }}>▶</span>
+          <div>
+            <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e", margin: 0 }}>부자재 <span style={{ fontSize: "13px", color: "#94a3b8", fontWeight: 600 }}>({packagings.length})</span></h3>
+            {!collapsed && <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>제품 연결·제조사·성적서는 다음 업데이트에서 추가됩니다</p>}
+          </div>
+        </div>
+        {!collapsed && (
+          <button onClick={() => { setShowForm(!showForm); setEditingId(null); }} style={{ background: "#1a1a2e", color: "white", border: "none", borderRadius: "10px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}>
+            {showForm ? "취소" : "+ 부자재 추가"}
+          </button>
+        )}
       </div>
-
+      {!collapsed && (
+      <>
       {/* 추가 폼 */}
       {showForm && (
         <div style={{ background: "#f8fafc", borderRadius: "14px", padding: "20px", marginBottom: "16px", border: "1px solid #e2e8f0" }}>
@@ -2802,12 +2837,14 @@ function PackagingManagement({ clientId, showToast }) {
           </div>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 }
-
 // ─── 업종/인허가 유형 태그 입력 컴포넌트 ───
-function TagInput({ tags, onChange, placeholder }) {  const [input, setInput] = useState("");
+function TagInput({ tags, onChange, placeholder }) {
+  const [input, setInput] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const handleKeyDown = (e) => {
     if (isComposing) return;
