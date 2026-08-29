@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 // ─── Supabase 설정 ───
-const APP_VERSION = "v2.5.3";
+const APP_VERSION = "v2.5.1";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -1789,6 +1789,9 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
   const [editForm, setEditForm] = useState({ product_name: "", product_type: "", product_report_no: "" });
   const [deleteId, setDeleteId] = useState(null);
 
+  // 유형별 필터
+  const [filterType, setFilterType] = useState("전체");
+
   // 붙여넣기 일괄 등록
   const [showPaste, setShowPaste] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -1847,6 +1850,17 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
     await onRefresh();
     showToast(`${toSave.length}건 등록되었습니다.`);
   };
+
+  // 등록된 제품들의 유형 목록 (중복 제거, 자동 생성)
+  const typeList = Array.from(new Set(products.map(p => (p.product_type || "").trim()).filter(Boolean))).sort();
+  // 선택된 유형으로 필터링
+  const visibleProducts = filterType === "전체"
+    ? products
+    : filterType === "(유형 없음)"
+      ? products.filter(p => !(p.product_type || "").trim())
+      : products.filter(p => (p.product_type || "").trim() === filterType);
+  // 유형 미지정 제품이 하나라도 있으면 "(유형 없음)" 버튼도 제공
+  const hasUntyped = products.some(p => !(p.product_type || "").trim());
 
   const handleAdd = async () => {
     if (!form.product_name.trim()) return showToast("제품명을 입력해주세요.", "error");
@@ -2013,13 +2027,29 @@ function ProductManagement({ clientId, products, loading, onRefresh, showToast }
         </div>
       )}
 
+      {/* 유형 필터 */}
+      {!loading && typeList.length > 0 && (
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "12px" }}>
+          {["전체", ...typeList, ...(hasUntyped ? ["(유형 없음)"] : [])].map(t => {
+            const active = filterType === t;
+            const count = t === "전체" ? products.length : t === "(유형 없음)" ? products.filter(p => !(p.product_type || "").trim()).length : products.filter(p => (p.product_type || "").trim() === t).length;
+            return (
+              <button key={t} onClick={() => setFilterType(t)} style={{ padding: "6px 12px", borderRadius: "10px", border: active ? "2px solid #7c3aed" : "1px solid #e2e8f0", background: active ? "#ede9fe" : "white", color: active ? "#7c3aed" : "#64748b", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+                {t} <span style={{ opacity: 0.7 }}>({count})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* 목록 */}
       {loading ? (
         <LoadingSpinner message="제품 목록 로딩 중..." />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           {products.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>등록된 제품이 없습니다.</p>}
-          {products.map(p => (
+          {products.length > 0 && visibleProducts.length === 0 && <p style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>이 유형의 제품이 없습니다.</p>}
+          {visibleProducts.map(p => (
             <div key={p.id} style={{ background: editingId === p.id ? "#fff" : "#f8fafc", borderRadius: "12px", padding: "14px 16px", border: editingId === p.id ? "2px solid #1a1a2e" : "1px solid #e8ecf2" }}>
               {editingId === p.id ? (
                 /* 수정 모드 */
