@@ -2414,6 +2414,8 @@ function MaterialManagement({ clientId, products, showToast, collapsed, onToggle
           ))}
         </div>
       )}
+      </>
+      )}
     </div>
   );
 }
